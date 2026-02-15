@@ -18,12 +18,13 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Authenticate via API key (query param or Bearer token)
+  // Authenticate via API key (query param, Bearer header, or webhook token header)
   const url = new URL(req.url);
   const queryToken = url.searchParams.get("token");
   const authHeader = req.headers.get("authorization");
   const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  const providedKey = queryToken || bearerToken;
+  const webhookToken = req.headers.get("x-webhook-token") || req.headers.get("token");
+  const providedKey = queryToken || bearerToken || webhookToken;
   const expectedKey = Deno.env.get("WEBHOOK_API_KEY");
 
   if (!expectedKey || providedKey !== expectedKey) {
