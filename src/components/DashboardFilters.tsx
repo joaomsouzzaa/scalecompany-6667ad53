@@ -15,9 +15,10 @@ import { useCidades } from "@/hooks/useCidades";
 interface DashboardFiltersProps {
   filters: Filters;
   onFiltersChange: (filters: Filters) => void;
+  hideCityFilter?: boolean;
 }
 
-export function DashboardFilters({ filters, onFiltersChange }: DashboardFiltersProps) {
+export function DashboardFilters({ filters, onFiltersChange, hideCityFilter = false }: DashboardFiltersProps) {
   const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
@@ -133,23 +134,25 @@ export function DashboardFilters({ filters, onFiltersChange }: DashboardFiltersP
         </SelectContent>
       </Select>
 
-      <Select value={filters.city} onValueChange={(v) => update({ city: v })}>
-        <SelectTrigger className="w-[240px] bg-card">
-          <SelectValue placeholder="Cidade" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Todas as cidades</SelectItem>
-          {loadingCidades ? (
-            <SelectItem value="_loading" disabled>Carregando...</SelectItem>
-          ) : (
-            visibleCidades.map((c) => (
-              <SelectItem key={c.id} value={c.slug}>
-                {c.nome}
-              </SelectItem>
-            ))
-          )}
-        </SelectContent>
-      </Select>
+      {!hideCityFilter && (
+        <Select value={filters.city} onValueChange={(v) => update({ city: v })}>
+          <SelectTrigger className="w-[240px] bg-card">
+            <SelectValue placeholder="Cidade" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as cidades</SelectItem>
+            {loadingCidades ? (
+              <SelectItem value="_loading" disabled>Carregando...</SelectItem>
+            ) : (
+              visibleCidades.map((c) => (
+                <SelectItem key={c.id} value={c.slug}>
+                  {c.nome}
+                </SelectItem>
+              ))
+            )}
+          </SelectContent>
+        </Select>
+      )}
     </div>
   );
 }
