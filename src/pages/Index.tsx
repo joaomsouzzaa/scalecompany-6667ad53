@@ -113,7 +113,7 @@ const Index = () => {
                 change="+324 novos"
                 changeType="positive"
                 icon={Users}
-                iconColor="bg-[hsl(var(--info))]/10 text-[hsl(var(--info))]"
+                iconColor="bg-primary/10 text-primary"
               />
               <KpiCard
                 title="Impressões"
