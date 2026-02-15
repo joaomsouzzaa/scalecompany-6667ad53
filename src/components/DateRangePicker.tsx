@@ -172,29 +172,16 @@ export function DateRangePicker({ preset, startDate, endDate, onApply }: DateRan
               selected={range.from ? { from: range.from, to: range.to } : undefined}
               onSelect={(r) => {
                 if (r?.from && !r?.to) {
-                  if (range.from && range.to) {
-                    setRange({ from: r.from, to: r.from });
-                    setSelectedPreset("custom");
-                    onApply("custom", r.from, r.from);
-                    setOpen(false);
-                    return;
-                  } else if (range.from && r.from.getTime() === range.from.getTime() && !range.to) {
-                    setRange({ from: r.from, to: r.from });
-                    setSelectedPreset("custom");
-                    onApply("custom", r.from, r.from);
-                    setOpen(false);
-                    return;
-                  } else {
-                    setRange({ from: r.from, to: undefined });
-                  }
+                  // 1st click: set start date, wait for 2nd click
+                  setRange({ from: r.from, to: undefined });
+                  setSelectedPreset("custom");
                 } else if (r?.from && r?.to) {
+                  // 2nd click: range complete (or same day), apply & close
                   setRange({ from: r.from, to: r.to });
                   setSelectedPreset("custom");
                   onApply("custom", r.from, r.to);
                   setOpen(false);
-                  return;
                 }
-                setSelectedPreset("custom");
               }}
               numberOfMonths={2}
               month={month}
