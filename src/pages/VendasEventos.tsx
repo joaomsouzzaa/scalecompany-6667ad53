@@ -131,6 +131,7 @@ const VendasEventos = () => {
   const [startDate, setStartDate] = useState<Date | undefined>();
   const [endDate, setEndDate] = useState<Date | undefined>();
   const [city, setCity] = useState("all");
+  const [tipoIngressoFilter, setTipoIngressoFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("aprovada");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
@@ -182,8 +183,19 @@ const VendasEventos = () => {
     setPage(1);
   }, [sortKey]);
 
+  const tipoIngressoOptions = useMemo(() => {
+    const set = new Set<string>();
+    vendas.forEach((v) => { if (v.tipo_ingresso) set.add(v.tipo_ingresso); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [vendas]);
+
+  const filteredVendas = useMemo(() => {
+    if (tipoIngressoFilter === "all") return vendas;
+    return vendas.filter((v) => v.tipo_ingresso === tipoIngressoFilter);
+  }, [vendas, tipoIngressoFilter]);
+
   const sortedVendas = useMemo(() => {
-    const arr = [...vendas];
+    const arr = [...filteredVendas];
     arr.sort((a, b) => {
       const av = a[sortKey];
       const bv = b[sortKey];
@@ -195,7 +207,7 @@ const VendasEventos = () => {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [vendas, sortKey, sortDir]);
+  }, [filteredVendas, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sortedVendas.length / perPage));
   const currentPage = Math.min(page, totalPages);
@@ -365,6 +377,17 @@ const VendasEventos = () => {
                     <SelectItem key={c.id} value={c.slug}>
                       {c.nome}
                     </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={tipoIngressoFilter} onValueChange={(v) => { setTipoIngressoFilter(v); setPage(1); }}>
+                <SelectTrigger className="w-[200px] bg-card">
+                  <SelectValue placeholder="Tipo de Ingresso" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os tipos</SelectItem>
+                  {tipoIngressoOptions.map((t) => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
