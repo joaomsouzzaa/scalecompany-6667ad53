@@ -42,7 +42,7 @@ export function SalesChart({ data }: SalesChartProps) {
                 fontSize: "13px",
               }}
               formatter={(value: number) =>
-                `R$ ${value.toLocaleString("pt-BR")}`
+                `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
               }
             />
             <Area
