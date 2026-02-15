@@ -82,8 +82,11 @@ const Integracoes = () => {
     try {
       await loadFacebookSDK();
       const result = await loginWithFacebook();
+      console.log("[Integracoes] Login result:", { status: result.status, hasToken: !!result.accessToken });
       if (result.status === "connected") {
+        console.log("[Integracoes] Exchanging token...");
         const longLived = await exchangeForLongLivedToken(result.accessToken!);
+        console.log("[Integracoes] Long-lived token OK, expires_in:", longLived.expires_in);
         localStorage.setItem("meta_access_token", longLived.access_token);
         const expiresAt = Date.now() + longLived.expires_in * 1000;
         localStorage.setItem("meta_token_expires_at", String(expiresAt));
@@ -94,6 +97,12 @@ const Integracoes = () => {
         setUserName(result.userName ?? null);
         localStorage.setItem("meta_connected", "true");
         localStorage.setItem("meta_user_name", result.userName ?? "");
+
+        console.log("[Integracoes] Stored:", {
+          connected: localStorage.getItem("meta_connected"),
+          tokenLen: localStorage.getItem("meta_access_token")?.length,
+        });
+
         toast({
           title: tokenExpired ? "Token renovado!" : "Conectado com sucesso!",
           description: `Conta "${result.userName}" vinculada com token de longa duração.`,
@@ -105,7 +114,8 @@ const Integracoes = () => {
           variant: "destructive",
         });
       }
-    } catch {
+    } catch (e: any) {
+      console.error("[Integracoes] Connect error:", e?.message || e);
       toast({
         title: "Erro ao conectar",
         description: "Não foi possível conectar com o Meta. Tente novamente.",
