@@ -81,8 +81,8 @@ export function useVendasData(filters: Filters) {
         .order("data_venda", { ascending: true });
 
       if (filters.city !== "all") {
-        const normalizedCity = removeAccents(filters.city);
-        query = query.ilike("cidade", `%${normalizedCity}%`);
+        const normalizedCity = removeAccents(filters.city).toLowerCase();
+        query = query.filter("cidade", "ilike", `%${normalizedCity}%`);
       }
 
       const { data, error } = await query;
