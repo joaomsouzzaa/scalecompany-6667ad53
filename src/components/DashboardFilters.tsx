@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Select,
   SelectContent,
@@ -21,25 +21,25 @@ export function DashboardFilters({ filters, onFiltersChange }: DashboardFiltersP
   const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
-  const lastTokenRef = useRef<string | null>(null);
   const fetchingRef = useRef(false);
 
   const { data: cidades = [], isLoading: loadingCidades } = useCidades();
   const hiddenCidades = getHiddenCidades();
   const visibleCidades = cidades.filter((c) => !hiddenCidades.includes(c.id));
 
-  const doFetch = useCallback(() => {
+  const loadAccounts = () => {
     const connected = localStorage.getItem("meta_connected") === "true";
     const token = localStorage.getItem("meta_access_token");
     const expired = isTokenExpired();
+
+    console.log("[DashboardFilters] loadAccounts called:", { connected, hasToken: !!token, tokenLen: token?.length, expired, fetching: fetchingRef.current });
 
     if (!connected || !token || expired) {
       setAdAccounts([]);
       return;
     }
 
-    // Skip if already fetched with the same token
-    if (lastTokenRef.current === token || fetchingRef.current) return;
+    if (fetchingRef.current) return;
     fetchingRef.current = true;
 
     setLoadingAccounts(true);
@@ -47,7 +47,7 @@ export function DashboardFilters({ filters, onFiltersChange }: DashboardFiltersP
 
     fetchAdAccounts()
       .then((accounts) => {
-        lastTokenRef.current = token;
+        console.log("[DashboardFilters] Fetched accounts:", accounts.length);
         setAdAccounts(accounts);
         if (
           filters.adAccount !== "all" &&
@@ -58,10 +58,9 @@ export function DashboardFilters({ filters, onFiltersChange }: DashboardFiltersP
       })
       .catch((err) => {
         const msg = err?.message || "";
+        console.error("[DashboardFilters] Fetch error:", msg);
         if (msg.toLowerCase().includes("too many calls") || msg.includes("rate")) {
           setRateLimited(true);
-        } else {
-          console.warn("[DashboardFilters] Error fetching accounts:", msg);
         }
         setAdAccounts([]);
       })
@@ -69,26 +68,24 @@ export function DashboardFilters({ filters, onFiltersChange }: DashboardFiltersP
         fetchingRef.current = false;
         setLoadingAccounts(false);
       });
-  }, [filters, onFiltersChange]);
+  };
 
   // Fetch on mount
   useEffect(() => {
-    doFetch();
-  }, [doFetch]);
+    loadAccounts();
+  }, []);
 
-  // Re-fetch when user navigates back to this tab (e.g. after reconnecting on Integracoes)
+  // Re-fetch when returning to tab
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === "visible") doFetch();
+      if (document.visibilityState === "visible") {
+        console.log("[DashboardFilters] Tab visible, re-checking...");
+        loadAccounts();
+      }
     };
-    const onFocus = () => doFetch();
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [doFetch]);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
 
   const update = (partial: Partial<Filters>) => {
     onFiltersChange({ ...filters, ...partial });
