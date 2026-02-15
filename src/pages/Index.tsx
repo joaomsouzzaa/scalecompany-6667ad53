@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import {
   DollarSign,
   TrendingUp,
@@ -16,9 +17,17 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { KpiCard } from "@/components/KpiCard";
 import { DashboardFilters } from "@/components/DashboardFilters";
 import { SalesChart } from "@/components/SalesChart";
-import { CampaignTable } from "@/components/CampaignTable";
+import { getFilteredData, fmt, type Filters } from "@/lib/mockData";
 
 const Index = () => {
+  const [filters, setFilters] = useState<Filters>({
+    dateRange: "30d",
+    adAccount: "all",
+    city: "all",
+  });
+
+  const kpi = useMemo(() => getFilteredData(filters), [filters]);
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
@@ -35,39 +44,31 @@ const Index = () => {
           </header>
 
           <div className="p-6 space-y-6">
-            <DashboardFilters />
+            <DashboardFilters filters={filters} onFiltersChange={setFilters} />
 
             {/* Row 1 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard
                 title="Investimento Total"
-                value="R$ 12.580"
-                change="+12.5% vs período anterior"
-                changeType="positive"
+                value={fmt(kpi.investimentoTotal)}
                 icon={DollarSign}
                 iconColor="bg-primary/10 text-primary"
               />
               <KpiCard
                 title="Bilheteria Total"
-                value="R$ 48.200"
-                change="+8.3% vs período anterior"
-                changeType="positive"
+                value={fmt(kpi.bilheteriaTotal)}
                 icon={TrendingUp}
                 iconColor="bg-[hsl(var(--success))]/10 text-[hsl(var(--success))]"
               />
               <KpiCard
                 title="CAC por Venda"
-                value="R$ 68,26"
-                change="-5.2% vs período anterior"
-                changeType="positive"
+                value={fmt(kpi.cacVenda)}
                 icon={Target}
                 iconColor="bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))]"
               />
               <KpiCard
                 title="CAC por Participante"
-                value="R$ 51,14"
-                change="Investimento / Participantes"
-                changeType="neutral"
+                value={fmt(kpi.cacParticipante)}
                 icon={Users}
                 iconColor="bg-primary/10 text-primary"
               />
@@ -77,38 +78,28 @@ const Index = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <KpiCard
                 title="Total de Participantes"
-                value="246"
-                change="+18 esta semana"
-                changeType="positive"
+                value={String(kpi.participantes)}
                 icon={Users}
               />
               <KpiCard
                 title="Total de VIPs"
-                value="52"
-                change="21% do total"
-                changeType="neutral"
+                value={String(kpi.totalVips)}
                 icon={Crown}
                 iconColor="bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))]"
               />
               <KpiCard
                 title="Vendas Individuais"
-                value="118"
+                value={String(kpi.vendasIndividuais)}
                 icon={User}
-                change="64% das vendas"
-                changeType="neutral"
               />
               <KpiCard
                 title="Vendas Duplas"
-                value="66"
+                value={String(kpi.vendasDuplas)}
                 icon={Users2}
-                change="36% das vendas"
-                changeType="neutral"
               />
               <KpiCard
                 title="Ticket Médio"
-                value="R$ 261,41"
-                change="+2.1% vs período anterior"
-                changeType="positive"
+                value={fmt(kpi.ticketMedio)}
                 icon={ShoppingCart}
                 iconColor="bg-accent/10 text-accent"
               />
@@ -118,34 +109,25 @@ const Index = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <KpiCard
                 title="Bilheteria Ingressos"
-                value="R$ 32.400"
-                change="Produtos sem VIP"
-                changeType="neutral"
+                value={fmt(kpi.bilheteriaIngressos)}
                 icon={Ticket}
               />
               <KpiCard
                 title="Bilheteria VIP"
-                value="R$ 15.800"
-                change="Produtos com VIP"
-                changeType="neutral"
+                value={fmt(kpi.bilheteriaVip)}
                 icon={Gift}
                 iconColor="bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))]"
               />
               <KpiCard
                 title="Lucro"
-                value="R$ 35.620"
-                change="Bilheteria - Investimento"
-                changeType="positive"
+                value={fmt(kpi.lucro)}
                 icon={Banknote}
                 iconColor="bg-[hsl(var(--success))]/10 text-[hsl(var(--success))]"
               />
             </div>
 
             {/* Charts */}
-            <SalesChart />
-
-            {/* Campaign Table */}
-            <CampaignTable />
+            <SalesChart data={kpi.chartData} />
           </div>
         </main>
       </div>

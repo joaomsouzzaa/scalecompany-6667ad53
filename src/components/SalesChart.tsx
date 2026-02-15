@@ -8,17 +8,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const data = [
-  { name: "01/01", investimento: 1200, faturamento: 4800 },
-  { name: "05/01", investimento: 1800, faturamento: 6200 },
-  { name: "10/01", investimento: 2200, faturamento: 7800 },
-  { name: "15/01", investimento: 1600, faturamento: 5400 },
-  { name: "20/01", investimento: 2800, faturamento: 9200 },
-  { name: "25/01", investimento: 3200, faturamento: 11000 },
-  { name: "30/01", investimento: 2600, faturamento: 8800 },
-];
+interface SalesChartProps {
+  data: { name: string; investimento: number; faturamento: number }[];
+}
 
-export function SalesChart() {
+export function SalesChart({ data }: SalesChartProps) {
   return (
     <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
       <h3 className="text-base font-semibold text-card-foreground mb-4">
