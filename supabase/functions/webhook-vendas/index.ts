@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
         produto: product.Name || null,
         tipo_ingresso: detectTipoIngresso(product.Name || ""),
         produtor: product.Producer || null,
-        cidade: buyer.Addresses?.[0]?.City || null,
+        cidade: buyer.Addresses?.[0]?.City || extractCidadeFromProduct(product.Name || "") || null,
         metodo_pagamento: payload.Purchase?.PaymentMethod?.metodoPagamento || null,
         cupom: totalDetails.CouponName || null,
         utm_source: marketing.UtmSource || null,
@@ -169,5 +169,15 @@ function detectTipoIngresso(productName: string): string | null {
   if (name.includes("vip")) return "vip";
   if (name.includes("duplo") || name.includes("2 pessoas")) return "duplo";
   if (name.includes("individual") || name.includes("1 pessoa")) return "individual";
+  return null;
+}
+
+function extractCidadeFromProduct(productName: string): string | null {
+  // Match patterns like "Workshop Scale - Natal" or "Workshop Scale - São Luís"
+  const match = productName.match(/[-–]\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)*)\s*(?:\)|$)/);
+  if (match) return match[1].trim();
+  // Also try pattern inside parentheses like "(Workshop Scale - Natal )"
+  const match2 = productName.match(/[-–]\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)*)\s*\)/);
+  if (match2) return match2[1].trim();
   return null;
 }
