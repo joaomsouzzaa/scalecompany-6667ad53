@@ -54,7 +54,7 @@ const WebhookSection = () => {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Configure este endpoint como URL de webhook/postback nas plataformas GoExplosion e Kiwify para receber as vendas automaticamente.
+          Configure este endpoint como URL de webhook/postback nas plataformas de checkout para receber as vendas automaticamente.
         </p>
       </CardContent>
     </Card>
