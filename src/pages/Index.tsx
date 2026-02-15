@@ -23,10 +23,13 @@ import { fetchAdAccounts, fetchAdSpend } from "@/lib/meta-ads";
 const Index = () => {
   const [filters, setFilters] = useState<Filters>(() => {
     const savedAccount = localStorage.getItem("selected_ad_account");
+    const savedDateRange = localStorage.getItem("selected_date_range");
+    const savedStartDate = localStorage.getItem("selected_start_date");
+    const savedEndDate = localStorage.getItem("selected_end_date");
     return {
-      dateRange: "30d",
-      startDate: undefined,
-      endDate: undefined,
+      dateRange: savedDateRange || "30d",
+      startDate: savedStartDate ? new Date(savedStartDate) : undefined,
+      endDate: savedEndDate ? new Date(savedEndDate) : undefined,
       adAccount: savedAccount || "all",
       city: "all",
     };
@@ -35,6 +38,17 @@ const Index = () => {
   const handleFiltersChange = (newFilters: Filters) => {
     if (newFilters.adAccount !== filters.adAccount) {
       localStorage.setItem("selected_ad_account", newFilters.adAccount);
+    }
+    localStorage.setItem("selected_date_range", newFilters.dateRange);
+    if (newFilters.startDate) {
+      localStorage.setItem("selected_start_date", newFilters.startDate.toISOString());
+    } else {
+      localStorage.removeItem("selected_start_date");
+    }
+    if (newFilters.endDate) {
+      localStorage.setItem("selected_end_date", newFilters.endDate.toISOString());
+    } else {
+      localStorage.removeItem("selected_end_date");
     }
     setFilters(newFilters);
   };
