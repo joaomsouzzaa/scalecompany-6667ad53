@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plug, Wifi, WifiOff, Loader2 } from "lucide-react";
+import { Plug, Wifi, WifiOff, Loader2, ShoppingCart, Copy, Check } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,49 @@ import {
   loginWithFacebook,
   logoutFromFacebook,
 } from "@/lib/facebook-sdk";
+
+const WEBHOOK_URL = "https://scalecompany.lovable.app/api/webhook-vendas";
+
+const WebhookSection = () => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(WEBHOOK_URL);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-[hsl(var(--success))]/10 flex items-center justify-center">
+            <ShoppingCart className="h-5 w-5 text-[hsl(var(--success))]" />
+          </div>
+          <div>
+            <CardTitle className="text-base">Checkout de Vendas</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Cole esta URL nas configurações de webhook da GoExplosion ou Kiwify
+            </p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-3">
+        <div className="flex items-center gap-2">
+          <code className="flex-1 rounded-md bg-muted px-3 py-2 text-sm font-mono text-foreground break-all select-all">
+            {WEBHOOK_URL}
+          </code>
+          <Button variant="outline" size="icon" onClick={handleCopy} className="shrink-0">
+            {copied ? <Check className="h-4 w-4 text-[hsl(var(--success))]" /> : <Copy className="h-4 w-4" />}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Configure este endpoint como URL de webhook/postback nas plataformas GoExplosion e Kiwify para receber as vendas automaticamente.
+        </p>
+      </CardContent>
+    </Card>
+  );
+};
 
 const Integracoes = () => {
   const [metaConnected, setMetaConnected] = useState(() => {
@@ -179,6 +222,9 @@ const Integracoes = () => {
                 </CollapsibleContent>
               </Card>
             </Collapsible>
+
+            {/* Checkout de Vendas */}
+            <WebhookSection />
           </div>
         </main>
       </div>
