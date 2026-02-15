@@ -30,7 +30,6 @@ import { Button } from "@/components/ui/button";
 
 const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Integrações", url: "/integracoes", icon: Plug },
   { title: "Filtros", url: "/filtros", icon: Filter },
 ];
 
@@ -124,6 +123,19 @@ export function AppSidebar() {
           Configurações
         </SidebarGroupLabel>
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Integrações">
+              <NavLink
+                to="/integracoes"
+                end
+                className="hover:bg-sidebar-accent/80"
+                activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
+              >
+                <Plug className="h-4 w-4" />
+                <span>Integrações</span>
+              </NavLink>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Configurações da Conta">
               <NavLink
