@@ -120,18 +120,21 @@ function calcularKpis(vendas: VendaRow[]) {
 
     const duplo = isDuplo(v);
     const vip = isVip(v);
+    const qty = v.quantidade || 1;
 
     if (duplo) {
       vendasDuplas++;
-      participantes += 2;
+      // Each unit of a "duplo" product = 2 people
+      participantes += qty * 2;
     } else {
       vendasIndividuais++;
-      participantes += v.quantidade || 1;
+      // Individual or non-duplo (e.g. Recife Scale Summit): 1 person per unit
+      participantes += qty;
     }
 
     if (vip) {
       bilheteriaVip += valor;
-      totalVips += duplo ? 2 : 1;
+      totalVips += duplo ? qty * 2 : qty;
     } else {
       bilheteriaIngressos += valor;
     }
