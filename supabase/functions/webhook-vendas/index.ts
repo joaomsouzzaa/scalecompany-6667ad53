@@ -18,6 +18,21 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Authenticate via API key (query param or Bearer token)
+  const url = new URL(req.url);
+  const queryToken = url.searchParams.get("token");
+  const authHeader = req.headers.get("authorization");
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  const providedKey = queryToken || bearerToken;
+  const expectedKey = Deno.env.get("WEBHOOK_API_KEY");
+
+  if (!expectedKey || providedKey !== expectedKey) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const payload = await req.json();
     let venda: Record<string, unknown>;
@@ -115,8 +130,8 @@ Deno.serve(async (req) => {
     const { error } = await supabase.from("vendas").insert(venda);
 
     if (error) {
-      console.error("Erro ao inserir venda:", error);
-      return new Response(JSON.stringify({ error: error.message }), {
+      console.error("[Webhook Error]", { timestamp: new Date().toISOString(), code: error.code, message: error.message });
+      return new Response(JSON.stringify({ error: "Failed to process webhook" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -127,9 +142,9 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("Erro no webhook:", err);
+    console.error("[Webhook Exception]", { timestamp: new Date().toISOString(), message: err instanceof Error ? err.message : "Unknown" });
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }),
+      JSON.stringify({ error: "Internal server error" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
