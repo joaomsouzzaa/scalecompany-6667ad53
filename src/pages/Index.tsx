@@ -29,9 +29,9 @@ import { differenceInDays } from "date-fns";
 const Index = () => {
   const [filters, setFilters] = useState<Filters>(() => {
     const savedAccount = localStorage.getItem("selected_ad_account");
-    const savedDateRange = localStorage.getItem("selected_date_range");
-    const savedStartDate = localStorage.getItem("selected_start_date");
-    const savedEndDate = localStorage.getItem("selected_end_date");
+    const savedDateRange = localStorage.getItem("dashboard11_date_range");
+    const savedStartDate = localStorage.getItem("dashboard11_start_date");
+    const savedEndDate = localStorage.getItem("dashboard11_end_date");
     const savedCity = localStorage.getItem("selected_city");
     return {
       dateRange: savedDateRange || "30d",
@@ -46,16 +46,16 @@ const Index = () => {
     if (newFilters.adAccount !== filters.adAccount) {
       localStorage.setItem("selected_ad_account", newFilters.adAccount);
     }
-    localStorage.setItem("selected_date_range", newFilters.dateRange);
+    localStorage.setItem("dashboard11_date_range", newFilters.dateRange);
     if (newFilters.startDate) {
-      localStorage.setItem("selected_start_date", newFilters.startDate.toISOString());
+      localStorage.setItem("dashboard11_start_date", newFilters.startDate.toISOString());
     } else {
-      localStorage.removeItem("selected_start_date");
+      localStorage.removeItem("dashboard11_start_date");
     }
     if (newFilters.endDate) {
-      localStorage.setItem("selected_end_date", newFilters.endDate.toISOString());
+      localStorage.setItem("dashboard11_end_date", newFilters.endDate.toISOString());
     } else {
-      localStorage.removeItem("selected_end_date");
+      localStorage.removeItem("dashboard11_end_date");
     }
     localStorage.setItem("selected_city", newFilters.city);
     setFilters(newFilters);
