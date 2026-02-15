@@ -124,6 +124,46 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      buscar_vendas: {
+        Args: {
+          p_city_slug?: string
+          p_end: string
+          p_start: string
+          p_status: string
+        }
+        Returns: {
+          cidade: string | null
+          created_at: string
+          cupom: string | null
+          data_venda: string
+          documento: string | null
+          email_comprador: string | null
+          id: string
+          id_transacao: string | null
+          metodo_pagamento: string | null
+          nome_comprador: string | null
+          payload: Json | null
+          plataforma: string
+          produto: string | null
+          produtor: string | null
+          quantidade: number | null
+          status: string
+          telefone_comprador: string | null
+          tipo_ingresso: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+          valor: number
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "vendas"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       immutable_unaccent: { Args: { "": string }; Returns: string }
       unaccent: { Args: { "": string }; Returns: string }
     }
