@@ -186,6 +186,7 @@ const VendasEventos = () => {
       metodo_pagamento: v.metodo_pagamento,
       status: v.status,
       cupom: v.cupom,
+      quantidade: v.quantidade,
     });
   };
 
@@ -203,6 +204,7 @@ const VendasEventos = () => {
         metodo_pagamento: editForm.metodo_pagamento,
         status: editForm.status || "aprovada",
         cupom: editForm.cupom,
+        quantidade: Number(editForm.quantidade) || 1,
       })
       .eq("id", editingVenda.id);
 
@@ -447,6 +449,15 @@ const VendasEventos = () => {
               <Input
                 value={editForm.tipo_ingresso || ""}
                 onChange={(e) => setEditForm({ ...editForm, tipo_ingresso: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Quantidade</Label>
+              <Input
+                type="number"
+                min="1"
+                value={editForm.quantidade ?? 1}
+                onChange={(e) => setEditForm({ ...editForm, quantidade: Number(e.target.value) })}
               />
             </div>
             <div className="space-y-1">
