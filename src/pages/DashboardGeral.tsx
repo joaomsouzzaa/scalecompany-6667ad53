@@ -320,7 +320,7 @@ const DashboardGeral = () => {
                                 const spend = metaSpendMap.get(cidade.slug) || 0;
                                 const diff = kpi.bilheteria - spend;
                                 return (
-                                  <p className={`text-sm font-bold ${diff >= 0 ? "text-emerald-500" : "text-destructive"}`}>
+                                  <p className={`text-sm font-bold ${diff >= 0 ? "text-[hsl(var(--success))]" : "text-primary"}`}>
                                     {fmt(diff)}
                                   </p>
                                 );
