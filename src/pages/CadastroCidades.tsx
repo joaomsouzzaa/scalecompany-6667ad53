@@ -50,7 +50,7 @@ function normalizeSlug(nome: string): string {
 const CadastroCidades = () => {
   const { data: cidades = [], isLoading } = useCidades();
   const queryClient = useQueryClient();
-  const hiddenCidades = getHiddenCidades();
+  const [hiddenCidades, setHiddenCidades] = useState<string[]>(getHiddenCidades());
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingCidade, setEditingCidade] = useState<Cidade | null>(null);
@@ -124,16 +124,13 @@ const CadastroCidades = () => {
   };
 
   const toggleHidden = (cidade: Cidade) => {
-    const current = getHiddenCidades();
-    const isHidden = current.includes(cidade.id);
+    const isHidden = hiddenCidades.includes(cidade.id);
     const updated = isHidden
-      ? current.filter((id: string) => id !== cidade.id)
-      : [...current, cidade.id];
+      ? hiddenCidades.filter((id: string) => id !== cidade.id)
+      : [...hiddenCidades, cidade.id];
     localStorage.setItem("hidden_cidades", JSON.stringify(updated));
-    // Force re-render
-    queryClient.invalidateQueries({ queryKey: ["cidades"] });
+    setHiddenCidades(updated);
     toast.success(isHidden ? `${cidade.nome} reativada` : `${cidade.nome} desativada`);
-    window.dispatchEvent(new Event("storage"));
   };
 
   return (
