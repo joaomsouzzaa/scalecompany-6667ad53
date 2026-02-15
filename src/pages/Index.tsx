@@ -30,12 +30,13 @@ const Index = () => {
     const savedDateRange = localStorage.getItem("selected_date_range");
     const savedStartDate = localStorage.getItem("selected_start_date");
     const savedEndDate = localStorage.getItem("selected_end_date");
+    const savedCity = localStorage.getItem("selected_city");
     return {
       dateRange: savedDateRange || "30d",
       startDate: savedStartDate ? new Date(savedStartDate) : undefined,
       endDate: savedEndDate ? new Date(savedEndDate) : undefined,
       adAccount: savedAccount || "all",
-      city: "all",
+      city: savedCity || "all",
     };
   });
 
@@ -54,6 +55,7 @@ const Index = () => {
     } else {
       localStorage.removeItem("selected_end_date");
     }
+    localStorage.setItem("selected_city", newFilters.city);
     setFilters(newFilters);
   };
 
