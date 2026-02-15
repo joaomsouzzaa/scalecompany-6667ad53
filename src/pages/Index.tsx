@@ -282,7 +282,7 @@ const Index = () => {
                 iconColor="bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))]"
               />
               <KpiCard
-                title="Lucro"
+                title="Bilheteria (+/-)"
                 value={fmt(lucroDisplay)}
                 icon={Banknote}
                 iconColor="bg-[hsl(var(--success))]/10 text-[hsl(var(--success))]"
