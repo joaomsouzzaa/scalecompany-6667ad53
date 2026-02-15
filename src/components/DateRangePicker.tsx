@@ -172,17 +172,27 @@ export function DateRangePicker({ preset, startDate, endDate, onApply }: DateRan
               selected={range.from ? { from: range.from, to: range.to } : undefined}
               onSelect={(r) => {
                 if (r?.from && !r?.to) {
-                  // When clicking a new day while a complete range exists,
-                  // set as single-day selection immediately (no need for double-click)
                   if (range.from && range.to) {
                     setRange({ from: r.from, to: r.from });
+                    setSelectedPreset("custom");
+                    onApply("custom", r.from, r.from);
+                    setOpen(false);
+                    return;
                   } else if (range.from && r.from.getTime() === range.from.getTime() && !range.to) {
                     setRange({ from: r.from, to: r.from });
+                    setSelectedPreset("custom");
+                    onApply("custom", r.from, r.from);
+                    setOpen(false);
+                    return;
                   } else {
                     setRange({ from: r.from, to: undefined });
                   }
-                } else {
-                  setRange({ from: r?.from, to: r?.to });
+                } else if (r?.from && r?.to) {
+                  setRange({ from: r.from, to: r.to });
+                  setSelectedPreset("custom");
+                  onApply("custom", r.from, r.to);
+                  setOpen(false);
+                  return;
                 }
                 setSelectedPreset("custom");
               }}
