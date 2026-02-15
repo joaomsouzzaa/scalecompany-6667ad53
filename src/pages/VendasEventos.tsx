@@ -127,6 +127,7 @@ const VendasEventos = () => {
   const [startDate, setStartDate] = useState<Date | undefined>();
   const [endDate, setEndDate] = useState<Date | undefined>();
   const [city, setCity] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("aprovada");
   const [page, setPage] = useState(1);
   const perPage = 10;
 
@@ -146,11 +147,11 @@ const VendasEventos = () => {
   );
 
   const { data: vendas = [], isLoading } = useQuery({
-    queryKey: ["vendas-tabela", start, end, city],
+    queryKey: ["vendas-tabela", start, end, city, statusFilter],
     queryFn: async () => {
       const citySlug = city !== "all" ? city : null;
       const { data, error } = await supabase.rpc("buscar_vendas", {
-        p_status: "aprovada",
+        p_status: statusFilter,
         p_start: start,
         p_end: end,
         p_city_slug: citySlug,
@@ -273,6 +274,37 @@ const VendasEventos = () => {
                       {c.nome}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+                <SelectTrigger className="w-[180px] bg-card">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="aprovada">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-green-500" />
+                      Aprovada
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="cancelada">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-red-500" />
+                      Cancelada
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="pendente">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                      Pendente
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="reembolsada">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-orange-500" />
+                      Reembolsada
+                    </div>
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <span className="text-sm text-muted-foreground ml-auto">
