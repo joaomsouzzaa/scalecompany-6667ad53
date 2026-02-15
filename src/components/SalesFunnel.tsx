@@ -2,6 +2,7 @@ interface FunnelStep {
   label: string;
   value: string;
   count: number | null;
+  conversionLabel: string | null;
 }
 
 interface SalesFunnelProps {
@@ -39,7 +40,7 @@ export function SalesFunnel({ steps }: SalesFunnelProps) {
           const isFirst = index === 0;
 
           // Conversion from previous step
-          const showConversion = index > 0;
+          const showConversion = index > 0 && step.conversionLabel !== null;
           const prevStep = index > 0 ? steps[index - 1] : null;
           const conversionPercent = showConversion ? calcConversionPercent(step.count, prevStep?.count ?? null) : null;
 
@@ -99,7 +100,7 @@ export function SalesFunnel({ steps }: SalesFunnelProps) {
                   <div className="h-[1px] w-5 bg-muted-foreground/40" />
                   <div className="flex flex-col items-start">
                     <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                      Conversão
+                      {step.conversionLabel}
                     </span>
                     <span className="text-sm font-bold text-[hsl(var(--success))]">
                       {conversionPercent}

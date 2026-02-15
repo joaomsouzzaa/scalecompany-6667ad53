@@ -99,13 +99,13 @@ const InsideSales = () => {
   const vendasPercent = reunioesRealizadas > 0 ? (vendas / reunioesRealizadas) * 100 : 0;
 
   const funnelSteps = [
-    { label: "Investimento", value: fmt(investimento), count: null },
-    { label: "Leads", value: String(leads), count: leads },
-    { label: "MQL", value: String(mql), count: mql },
-    { label: "SQL", value: String(sql), count: sql },
-    { label: "Reunião Agendada", value: String(reunioesAgendadas), count: reunioesAgendadas },
-    { label: "Reunião Realizada", value: String(reunioesRealizadas), count: reunioesRealizadas },
-    { label: "Vendas", value: String(vendas), count: vendas },
+    { label: "Investimento", value: fmt(investimento), count: null, conversionLabel: null },
+    { label: "Leads", value: String(leads), count: leads, conversionLabel: null },
+    { label: "MQL", value: String(mql), count: mql, conversionLabel: "MQL %" },
+    { label: "SQL", value: String(sql), count: sql, conversionLabel: "SQL %" },
+    { label: "Reunião Agendada", value: String(reunioesAgendadas), count: reunioesAgendadas, conversionLabel: "RA %" },
+    { label: "Reunião Realizada", value: String(reunioesRealizadas), count: reunioesRealizadas, conversionLabel: "RR %" },
+    { label: "Vendas", value: String(vendas), count: vendas, conversionLabel: "Vendas %" },
   ];
 
   return (
