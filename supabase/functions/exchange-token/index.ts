@@ -27,8 +27,10 @@ Deno.serve(async (req) => {
 
     const url = `https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${encodeURIComponent(short_lived_token)}`;
 
+    console.log("Exchanging token with Meta API...");
     const response = await fetch(url);
     const data = await response.json();
+    console.log("Meta API response status:", response.status, "expires_in:", data.expires_in, "has_token:", !!data.access_token, "error:", data.error);
 
     if (!response.ok || data.error) {
       return new Response(
