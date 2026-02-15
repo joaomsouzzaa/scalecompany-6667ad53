@@ -7,8 +7,6 @@ import {
   Crown,
   User,
   Users2,
-  Receipt,
-  Banknote,
   Ticket,
   Gift,
 } from "lucide-react";
@@ -38,8 +36,8 @@ const Index = () => {
           <div className="p-6 space-y-6">
             <DashboardFilters />
 
-            {/* KPI Row 1 - Financial */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* Row 1 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard
                 title="Investimento Total"
                 value="R$ 12.580"
@@ -72,45 +70,10 @@ const Index = () => {
                 icon={Users}
                 iconColor="bg-primary/10 text-primary"
               />
-              <KpiCard
-                title="Ticket Médio"
-                value="R$ 261,41"
-                change="+2.1% vs período anterior"
-                changeType="positive"
-                icon={ShoppingCart}
-                iconColor="bg-accent/10 text-accent"
-              />
             </div>
 
-            {/* KPI Row 2 - Lucro, Bilheteria Normal, Orderbump */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <KpiCard
-                title="Lucro"
-                value="R$ 35.620"
-                change="Bilheteria - Investimento"
-                changeType="positive"
-                icon={Banknote}
-                iconColor="bg-[hsl(var(--success))]/10 text-[hsl(var(--success))]"
-              />
-              <KpiCard
-                title="Bilheteria de Ingressos Normais"
-                value="R$ 32.400"
-                change="Produtos sem VIP"
-                changeType="neutral"
-                icon={Ticket}
-              />
-              <KpiCard
-                title="Faturamento Orderbump"
-                value="R$ 15.800"
-                change="Produtos com VIP"
-                changeType="neutral"
-                icon={Gift}
-                iconColor="bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))]"
-              />
-            </div>
-
-            {/* KPI Row 2 - Sales breakdown */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Row 2 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <KpiCard
                 title="Total de Participantes"
                 value="246"
@@ -139,6 +102,33 @@ const Index = () => {
                 icon={Users2}
                 change="36% das vendas"
                 changeType="neutral"
+              />
+              <KpiCard
+                title="Ticket Médio"
+                value="R$ 261,41"
+                change="+2.1% vs período anterior"
+                changeType="positive"
+                icon={ShoppingCart}
+                iconColor="bg-accent/10 text-accent"
+              />
+            </div>
+
+            {/* Row 3 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+              <KpiCard
+                title="Bilheteria de Ingressos Normais"
+                value="R$ 32.400"
+                change="Produtos sem VIP"
+                changeType="neutral"
+                icon={Ticket}
+              />
+              <KpiCard
+                title="Bilheteria VIP"
+                value="R$ 15.800"
+                change="Produtos com VIP"
+                changeType="neutral"
+                icon={Gift}
+                iconColor="bg-[hsl(var(--warning))]/10 text-[hsl(var(--warning))]"
               />
             </div>
 
