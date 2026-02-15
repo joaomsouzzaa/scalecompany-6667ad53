@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarIcon, ChevronDown } from "lucide-react";
+import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -17,16 +17,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { Filters } from "@/lib/mockData";
 
-export function DashboardFilters() {
+interface DashboardFiltersProps {
+  filters: Filters;
+  onFiltersChange: (filters: Filters) => void;
+}
+
+export function DashboardFilters({ filters, onFiltersChange }: DashboardFiltersProps) {
   const [date, setDate] = useState<Date | undefined>(new Date());
-  const [dateRange, setDateRange] = useState("30d");
-  const [adAccount, setAdAccount] = useState("all");
-  const [city, setCity] = useState("all");
+
+  const update = (partial: Partial<Filters>) => {
+    onFiltersChange({ ...filters, ...partial });
+  };
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <Select value={dateRange} onValueChange={setDateRange}>
+      <Select value={filters.dateRange} onValueChange={(v) => update({ dateRange: v })}>
         <SelectTrigger className="w-[160px] bg-card">
           <SelectValue placeholder="Período" />
         </SelectTrigger>
@@ -39,7 +46,7 @@ export function DashboardFilters() {
         </SelectContent>
       </Select>
 
-      {dateRange === "custom" && (
+      {filters.dateRange === "custom" && (
         <Popover>
           <PopoverTrigger asChild>
             <Button
@@ -65,7 +72,7 @@ export function DashboardFilters() {
         </Popover>
       )}
 
-      <Select value={adAccount} onValueChange={setAdAccount}>
+      <Select value={filters.adAccount} onValueChange={(v) => update({ adAccount: v })}>
         <SelectTrigger className="w-[200px] bg-card">
           <SelectValue placeholder="Conta de Anúncios" />
         </SelectTrigger>
@@ -76,7 +83,7 @@ export function DashboardFilters() {
         </SelectContent>
       </Select>
 
-      <Select value={city} onValueChange={setCity}>
+      <Select value={filters.city} onValueChange={(v) => update({ city: v })}>
         <SelectTrigger className="w-[180px] bg-card">
           <SelectValue placeholder="Cidade" />
         </SelectTrigger>
