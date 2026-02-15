@@ -1,7 +1,7 @@
 interface FunnelStep {
   label: string;
   value: string;
-  sublabel?: string;
+  count: number | null;
 }
 
 interface SalesFunnelProps {
@@ -18,6 +18,11 @@ const NEON_COLORS = [
   { bg: "from-[#FF2D75] to-[#FF69B4]", glow: "rgba(255,45,117,0.3)", text: "#fff" },
 ];
 
+function calcConversionPercent(current: number | null, previous: number | null): string | null {
+  if (current === null || previous === null || previous === 0) return null;
+  return `${((current / previous) * 100).toFixed(1)}%`;
+}
+
 export function SalesFunnel({ steps }: SalesFunnelProps) {
   const totalSteps = steps.length;
 
@@ -29,10 +34,13 @@ export function SalesFunnel({ steps }: SalesFunnelProps) {
       <div className="relative flex flex-col items-center">
         {steps.map((step, index) => {
           const color = NEON_COLORS[index % NEON_COLORS.length];
-          // Width shrinks from 100% down to ~30%
           const widthPercent = 100 - (index / Math.max(totalSteps - 1, 1)) * 70;
           const isLast = index === totalSteps - 1;
           const isFirst = index === 0;
+
+          // Conversion from previous step
+          const prevStep = index > 0 ? steps[index - 1] : null;
+          const conversionPercent = calcConversionPercent(step.count, prevStep?.count ?? null);
 
           return (
             <div
@@ -75,16 +83,29 @@ export function SalesFunnel({ steps }: SalesFunnelProps) {
                 >
                   {step.value}
                 </span>
-                {step.sublabel && (
-                  <span
-                    className="text-[11px] font-semibold drop-shadow-sm"
-                    style={{ color: color.text, opacity: 0.8 }}
-                  >
-                    {step.sublabel}
-                  </span>
-                )}
               </div>
 
+              {/* Conversion percentage on the right */}
+              {conversionPercent && (
+                <div
+                  className="absolute flex items-center gap-2"
+                  style={{
+                    left: `calc(50% + ${widthPercent / 2}% + 12px)`,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                  }}
+                >
+                  <div className="h-[1px] w-5 bg-muted-foreground/40" />
+                  <div className="flex flex-col items-start">
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                      Conversão
+                    </span>
+                    <span className="text-sm font-bold text-[hsl(var(--success))]">
+                      {conversionPercent}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
