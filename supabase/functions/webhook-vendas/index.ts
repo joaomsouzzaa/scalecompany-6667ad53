@@ -199,7 +199,8 @@ function mapStatus(status: string): string {
 function detectTipoIngresso(productName: string): string | null {
   const name = productName.toLowerCase();
   if (name.includes("vip duplo")) return "vip_duplo";
-  if (name.includes("vip")) return "vip";
+  if (name.includes("vip") && (name.includes("individual") || name.includes("1 pessoa"))) return "vip_individual";
+  if (name.includes("vip")) return "vip_individual";
   if (name.includes("duplo") || name.includes("2 pessoas")) return "duplo";
   if (name.includes("individual") || name.includes("1 pessoa")) return "individual";
   if (name.includes("diamond")) return "diamond";
