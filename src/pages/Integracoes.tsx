@@ -16,7 +16,7 @@ import {
   loginWithFacebook,
   logoutFromFacebook,
 } from "@/lib/facebook-sdk";
-import { exchangeForLongLivedToken, isTokenExpired, clearTokenExpired } from "@/lib/meta-ads";
+import { exchangeForLongLivedToken, isTokenExpired, clearTokenExpired, clearAdAccountsCache } from "@/lib/meta-ads";
 
 const WEBHOOK_URL = "https://dobexeqizssojpzuhkfn.supabase.co/functions/v1/webhook-vendas";
 
@@ -126,6 +126,47 @@ const Integracoes = () => {
     }
   };
 
+  const handleReconnect = async () => {
+    setLoading(true);
+    try {
+      // Clear everything first
+      await logoutFromFacebook().catch(() => {});
+      localStorage.removeItem("meta_access_token");
+      localStorage.removeItem("meta_token_expires_at");
+      localStorage.removeItem("meta_token_expired");
+      clearAdAccountsCache();
+
+      // Now reconnect
+      await loadFacebookSDK();
+      const result = await loginWithFacebook();
+      if (result.status === "connected") {
+        const longLived = await exchangeForLongLivedToken(result.accessToken!);
+        localStorage.setItem("meta_access_token", longLived.access_token);
+        const expiresAt = Date.now() + longLived.expires_in * 1000;
+        localStorage.setItem("meta_token_expires_at", String(expiresAt));
+        clearTokenExpired();
+        setTokenExpired(false);
+        setMetaConnected(true);
+        setUserName(result.userName ?? null);
+        localStorage.setItem("meta_connected", "true");
+        localStorage.setItem("meta_user_name", result.userName ?? "");
+        toast({
+          title: "Reconectado com sucesso!",
+          description: `Token renovado para "${result.userName}".`,
+        });
+      }
+    } catch (e: any) {
+      console.error("[Integracoes] Reconnect error:", e?.message || e);
+      toast({
+        title: "Erro ao reconectar",
+        description: "Tente novamente em alguns minutos.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDisconnect = async () => {
     setLoading(true);
     try {
@@ -135,6 +176,9 @@ const Integracoes = () => {
       localStorage.removeItem("meta_connected");
       localStorage.removeItem("meta_user_name");
       localStorage.removeItem("meta_access_token");
+      localStorage.removeItem("meta_token_expires_at");
+      localStorage.removeItem("meta_token_expired");
+      clearAdAccountsCache();
       toast({ title: "Desconectado", description: "Conta Meta desvinculada." });
     } catch {
       toast({
@@ -223,21 +267,29 @@ const Integracoes = () => {
                       <Button
                         onClick={handleConnect}
                         disabled={metaConnected && !tokenExpired || loading}
-                        variant={tokenExpired ? "default" : "default"}
                       >
                         {loading && !metaConnected ? (
                           <Loader2 className="h-4 w-4 animate-spin mr-2" />
                         ) : null}
                         {tokenExpired ? "Reconectar" : "Conectar com Meta"}
                       </Button>
+                      {metaConnected && !tokenExpired && (
+                        <Button
+                          variant="outline"
+                          onClick={handleReconnect}
+                          disabled={loading}
+                        >
+                          {loading ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : null}
+                          Reconectar (novo token)
+                        </Button>
+                      )}
                       <Button
                         variant="destructive"
                         onClick={handleDisconnect}
                         disabled={!metaConnected || loading}
                       >
-                        {loading && metaConnected ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        ) : null}
                         Desconectar
                       </Button>
                     </div>
