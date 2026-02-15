@@ -48,7 +48,7 @@ export function CampaignTable() {
                 </Badge>
               </TableCell>
               <TableCell className="text-right">
-                R$ {c.invest.toLocaleString("pt-BR")}
+                R$ {c.invest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </TableCell>
               <TableCell className="text-right">{c.sales}</TableCell>
               <TableCell className="text-right">{c.roas.toFixed(1)}x</TableCell>
