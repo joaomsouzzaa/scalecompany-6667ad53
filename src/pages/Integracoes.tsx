@@ -83,14 +83,10 @@ const Integracoes = () => {
       await loadFacebookSDK();
       const result = await loginWithFacebook();
       if (result.status === "connected") {
-        try {
-          const longLived = await exchangeForLongLivedToken(result.accessToken!);
-          localStorage.setItem("meta_access_token", longLived.access_token);
-          const expiresAt = Date.now() + longLived.expires_in * 1000;
-          localStorage.setItem("meta_token_expires_at", String(expiresAt));
-        } catch {
-          localStorage.setItem("meta_access_token", result.accessToken ?? "");
-        }
+        const longLived = await exchangeForLongLivedToken(result.accessToken!);
+        localStorage.setItem("meta_access_token", longLived.access_token);
+        const expiresAt = Date.now() + longLived.expires_in * 1000;
+        localStorage.setItem("meta_token_expires_at", String(expiresAt));
 
         clearTokenExpired();
         setTokenExpired(false);
