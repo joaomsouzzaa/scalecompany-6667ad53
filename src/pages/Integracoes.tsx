@@ -1,0 +1,112 @@
+import { useState } from "react";
+import { Plug, Wifi, WifiOff } from "lucide-react";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/AppSidebar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+
+const Integracoes = () => {
+  const [metaConnected, setMetaConnected] = useState(false);
+  const [open, setOpen] = useState(true);
+
+  return (
+    <SidebarProvider>
+      <div className="min-h-screen flex w-full">
+        <AppSidebar />
+        <main className="flex-1 overflow-auto">
+          <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
+            <SidebarTrigger />
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">Integrações</h1>
+              <p className="text-sm text-muted-foreground">
+                Gerencie suas conexões com plataformas externas
+              </p>
+            </div>
+          </header>
+
+          <div className="p-6 space-y-6">
+            <Collapsible open={open} onOpenChange={setOpen}>
+              <Card>
+                <CollapsibleTrigger asChild>
+                  <CardHeader className="cursor-pointer hover:bg-secondary/40 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-lg bg-[hsl(var(--info))]/10 flex items-center justify-center">
+                          <Plug className="h-5 w-5 text-[hsl(var(--info))]" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">Meta Ads</CardTitle>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Conecte sua conta para importar dados de campanhas
+                          </p>
+                        </div>
+                      </div>
+                      <Badge
+                        variant={metaConnected ? "default" : "destructive"}
+                        className={
+                          metaConnected
+                            ? "bg-[hsl(var(--success))] text-[hsl(var(--success-foreground))]"
+                            : ""
+                        }
+                      >
+                        {metaConnected ? (
+                          <>
+                            <Wifi className="h-3 w-3 mr-1" /> Conectada
+                          </>
+                        ) : (
+                          <>
+                            <WifiOff className="h-3 w-3 mr-1" /> Desconectada
+                          </>
+                        )}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                </CollapsibleTrigger>
+
+                <CollapsibleContent>
+                  <CardContent className="pt-0 space-y-4">
+                    <div
+                      className={`rounded-lg p-4 text-sm font-medium ${
+                        metaConnected
+                          ? "bg-[hsl(var(--success))]/10 text-[hsl(var(--success))]"
+                          : "bg-destructive/10 text-destructive"
+                      }`}
+                    >
+                      {metaConnected
+                        ? "✅ Conta conectada com sucesso"
+                        : "⚠️ Conta desconectada"}
+                    </div>
+
+                    <div className="flex gap-3">
+                      <Button
+                        onClick={() => setMetaConnected(true)}
+                        disabled={metaConnected}
+                      >
+                        Conectar com Meta
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={() => setMetaConnected(false)}
+                        disabled={!metaConnected}
+                      >
+                        Desconectar
+                      </Button>
+                    </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          </div>
+        </main>
+      </div>
+    </SidebarProvider>
+  );
+};
+
+export default Integracoes;
