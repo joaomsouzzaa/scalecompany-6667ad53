@@ -173,6 +173,63 @@ export async function fetchAdSpend(
   return results;
 }
 
+/** Fetch daily spend breakdown (date → spend) for accounts, optionally filtered by campaign slug */
+export async function fetchDailySpendBreakdown(
+  accountIds: string[],
+  dateRange: string,
+  startDate?: Date,
+  endDate?: Date,
+  campaignSlug?: string
+): Promise<Map<string, number>> {
+  const timeRange = startDate && endDate
+    ? { since: startDate.toISOString().split("T")[0], until: endDate.toISOString().split("T")[0] }
+    : buildTimeRange(dateRange);
+  const timeRangeParam = JSON.stringify(timeRange);
+
+  const dailyMap = new Map<string, number>();
+
+  await Promise.all(
+    accountIds.map(async (id) => {
+      try {
+        if (campaignSlug) {
+          const campaignsRes = await graphApiFetch<{ data: Array<{ id: string; name: string }> }>(
+            `/${id}/campaigns`,
+            { fields: "id,name", limit: "500", filtering: JSON.stringify([{ field: "name", operator: "CONTAIN", value: campaignSlug }]) }
+          );
+          const campaigns = campaignsRes.data || [];
+          await Promise.all(
+            campaigns.map(async (c) => {
+              try {
+                const insightRes = await graphApiFetch<{ data: Array<{ spend: string; date_start: string }> }>(
+                  `/${c.id}/insights`,
+                  { fields: "spend", time_range: timeRangeParam, time_increment: "1" }
+                );
+                for (const row of insightRes.data || []) {
+                  const date = row.date_start;
+                  const spend = parseFloat(row.spend) || 0;
+                  dailyMap.set(date, (dailyMap.get(date) || 0) + spend);
+                }
+              } catch {}
+            })
+          );
+        } else {
+          const res = await graphApiFetch<{ data: Array<{ spend: string; date_start: string }> }>(
+            `/${id}/insights`,
+            { fields: "spend", time_range: timeRangeParam, time_increment: "1" }
+          );
+          for (const row of res.data || []) {
+            const date = row.date_start;
+            const spend = parseFloat(row.spend) || 0;
+            dailyMap.set(date, (dailyMap.get(date) || 0) + spend);
+          }
+        }
+      } catch {}
+    })
+  );
+
+  return dailyMap;
+}
+
 /** Fetch the sum of daily budgets for active campaigns matching a slug */
 export async function fetchCampaignDailyBudget(
   accountIds: string[],
