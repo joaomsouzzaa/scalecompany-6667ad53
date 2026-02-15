@@ -1,8 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Filters } from "@/lib/mockData";
-import { removeAccents } from "@/lib/utils";
-import { useCidades } from "@/hooks/useCidades";
 
 interface VendaRow {
   valor: number;
@@ -68,34 +66,20 @@ function getDateRange(filters: Filters): { start: string; end: string } {
 }
 
 export function useVendasData(filters: Filters) {
-  const { data: cidades = [] } = useCidades();
-
   return useQuery({
-    queryKey: ["vendas-kpi", filters.dateRange, filters.startDate?.toISOString(), filters.endDate?.toISOString(), filters.city, cidades.length],
+    queryKey: ["vendas-kpi", filters.dateRange, filters.startDate?.toISOString(), filters.endDate?.toISOString(), filters.city],
     queryFn: async () => {
       const { start, end } = getDateRange(filters);
 
-      let query = supabase
-        .from("vendas")
-        .select("valor, quantidade, tipo_ingresso, produto, cidade, data_venda, status")
-        .eq("status", "aprovada")
-        .gte("data_venda", start)
-        .lte("data_venda", end)
-        .order("data_venda", { ascending: true });
+      const citySlug = filters.city !== "all" ? filters.city : null;
 
-      if (filters.city !== "all") {
-        const cidadeRecord = cidades.find((c) => c.slug === filters.city);
-        const slug = removeAccents(filters.city).toLowerCase();
-        const nome = cidadeRecord?.nome || "";
-        // Match by slug (unaccented) OR by original nome (accented)
-        const conditions = [`cidade.ilike.%${slug}%`];
-        if (nome && nome.toLowerCase() !== slug) {
-          conditions.push(`cidade.ilike.%${nome}%`);
-        }
-        query = query.or(conditions.join(","));
-      }
-
-      const { data, error } = await query;
+      const { data, error } = await supabase
+        .rpc("buscar_vendas", {
+          p_status: "aprovada",
+          p_start: start,
+          p_end: end,
+          p_city_slug: citySlug,
+        });
 
       if (error) throw error;
 
