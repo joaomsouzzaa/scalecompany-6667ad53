@@ -32,6 +32,11 @@ export function DashboardFilters({ filters, onFiltersChange }: DashboardFiltersP
       setAdAccounts([]);
       return;
     }
+    // If token is already flagged as expired, don't even try
+    if (isTokenExpired()) {
+      setAdAccounts([]);
+      return;
+    }
     setLoadingAccounts(true);
     fetchAdAccounts()
       .then((accounts) => {
@@ -43,7 +48,10 @@ export function DashboardFilters({ filters, onFiltersChange }: DashboardFiltersP
           onFiltersChange({ ...filters, adAccount: "all" });
         }
       })
-      .catch(() => setAdAccounts([]))
+      .catch((err) => {
+        console.warn("Erro ao buscar contas de anúncio:", err?.message);
+        setAdAccounts([]);
+      })
       .finally(() => setLoadingAccounts(false));
   }, [isMetaConnected]);
 
@@ -78,7 +86,7 @@ export function DashboardFilters({ filters, onFiltersChange }: DashboardFiltersP
             ))
           ) : !isMetaConnected ? (
             <SelectItem value="_none" disabled>Conecte o Meta Ads primeiro</SelectItem>
-          ) : isTokenExpired() ? (
+          ) : isTokenExpired() || !localStorage.getItem("meta_access_token") ? (
             <SelectItem value="_expired" disabled>Token expirado — reconecte nas Integrações</SelectItem>
           ) : (
             <SelectItem value="_empty" disabled>Nenhuma conta encontrada</SelectItem>
