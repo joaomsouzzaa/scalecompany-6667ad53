@@ -19,7 +19,7 @@ import { KpiCard } from "@/components/KpiCard";
 import { DashboardFilters } from "@/components/DashboardFilters";
 import { SalesChart } from "@/components/SalesChart";
 import { fmt, type Filters } from "@/lib/mockData";
-import { fetchAdAccounts, fetchAdSpend, fetchCampaignDailyBudget } from "@/lib/meta-ads";
+import { fetchAdAccounts, fetchAdSpend, fetchCampaignDailyBudget, fetchDailySpendBreakdown } from "@/lib/meta-ads";
 import { useVendasData } from "@/hooks/useVendasData";
 import { useCidades } from "@/hooks/useCidades";
 import { differenceInDays } from "date-fns";
@@ -61,6 +61,7 @@ const Index = () => {
   const [loadingSpend, setLoadingSpend] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [projecaoParticipantes, setProjecaoParticipantes] = useState<number | null>(null);
+  const [dailySpendMap, setDailySpendMap] = useState<Map<string, number>>(new Map());
 
   const { data: cidades = [] } = useCidades();
   const isMetaConnected = localStorage.getItem("meta_connected") === "true";
@@ -89,9 +90,13 @@ const Index = () => {
       }
 
       const slug = selectedCidade?.slug;
-      const results = await fetchAdSpend(accountIds, filters.dateRange, filters.startDate, filters.endDate, slug);
+      const [results, dailyBreakdown] = await Promise.all([
+        fetchAdSpend(accountIds, filters.dateRange, filters.startDate, filters.endDate, slug),
+        fetchDailySpendBreakdown(accountIds, filters.dateRange, filters.startDate, filters.endDate, slug),
+      ]);
       const totalSpend = results.reduce((sum, r) => sum + r.spend, 0);
       setMetaInvestimento(totalSpend);
+      setDailySpendMap(dailyBreakdown);
     } catch {
       setMetaInvestimento(null);
     } finally {
@@ -280,7 +285,31 @@ const Index = () => {
             </div>
 
             {/* Charts */}
-            <SalesChart data={kpi.chartData} />
+            <SalesChart data={(() => {
+              // Merge daily Meta spend into chart data
+              const merged = kpi.chartData.map((d) => {
+                // Convert chart label "dd/mm" to "YYYY-MM-DD" to match Meta's date_start
+                const [day, month] = d.name.split("/");
+                const year = new Date().getFullYear();
+                const dateKey = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+                return { ...d, investimento: dailySpendMap.get(dateKey) || 0 };
+              });
+              // Add days with spend but no sales
+              for (const [dateKey, spend] of dailySpendMap) {
+                const date = new Date(dateKey);
+                const label = date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+                if (!merged.find((m) => m.name === label)) {
+                  merged.push({ name: label, investimento: spend, faturamento: 0 });
+                }
+              }
+              // Sort by date
+              merged.sort((a, b) => {
+                const [da, ma] = a.name.split("/").map(Number);
+                const [db, mb] = b.name.split("/").map(Number);
+                return ma !== mb ? ma - mb : da - db;
+              });
+              return merged;
+            })()} />
           </div>
         </main>
       </div>
