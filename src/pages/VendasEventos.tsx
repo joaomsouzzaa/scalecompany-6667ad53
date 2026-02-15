@@ -134,6 +134,7 @@ const VendasEventos = () => {
   const [city, setCity] = useState("all");
   const [tipoIngressoFilter, setTipoIngressoFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState("aprovada");
+  const [nomeFilter, setNomeFilter] = useState("");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
 
@@ -191,9 +192,16 @@ const VendasEventos = () => {
   }, [vendas]);
 
   const filteredVendas = useMemo(() => {
-    if (tipoIngressoFilter.length === 0) return vendas;
-    return vendas.filter((v) => v.tipo_ingresso != null && tipoIngressoFilter.includes(v.tipo_ingresso));
-  }, [vendas, tipoIngressoFilter]);
+    let result = vendas;
+    if (tipoIngressoFilter.length > 0) {
+      result = result.filter((v) => v.tipo_ingresso != null && tipoIngressoFilter.includes(v.tipo_ingresso));
+    }
+    if (nomeFilter.trim()) {
+      const term = nomeFilter.trim().toLowerCase();
+      result = result.filter((v) => v.nome_comprador?.toLowerCase().includes(term));
+    }
+    return result;
+  }, [vendas, tipoIngressoFilter, nomeFilter]);
 
   const sortedVendas = useMemo(() => {
     const arr = [...filteredVendas];
@@ -446,6 +454,12 @@ const VendasEventos = () => {
                   </SelectItem>
                 </SelectContent>
               </Select>
+              <Input
+                placeholder="Buscar comprador..."
+                value={nomeFilter}
+                onChange={(e) => { setNomeFilter(e.target.value); setPage(1); }}
+                className="w-[200px] bg-card"
+              />
               <span className="text-sm text-muted-foreground ml-auto">
                 {sortedVendas.length} venda{sortedVendas.length !== 1 ? "s" : ""}
               </span>
