@@ -7,6 +7,9 @@ import {
   UserPlus,
   Percent,
   TrendingDown,
+  CalendarCheck,
+  Video,
+  ShoppingCart,
 } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
@@ -88,15 +91,21 @@ const InsideSales = () => {
   const sql = 0;
   const sqlPercent = mql > 0 ? (sql / mql) * 100 : 0;
   const cplSql = sql > 0 ? investimento / sql : 0;
+  const reunioesAgendadas = 0;
+  const reunioesAgendadasPercent = sql > 0 ? (reunioesAgendadas / sql) * 100 : 0;
+  const reunioesRealizadas = 0;
+  const reunioesRealizadasPercent = reunioesAgendadas > 0 ? (reunioesRealizadas / reunioesAgendadas) * 100 : 0;
+  const vendas = 0;
+  const vendasPercent = reunioesRealizadas > 0 ? (vendas / reunioesRealizadas) * 100 : 0;
 
   const funnelSteps = [
-    { label: "Investimento", value: fmt(investimento) },
-    { label: "Leads", value: String(leads) },
-    { label: "CPL", value: fmt(cpl) },
-    { label: "MQL", value: String(mql), sublabel: `${mqlPercent.toFixed(1)}%` },
-    { label: "CPL MQL", value: fmt(cplMql) },
-    { label: "SQL", value: String(sql), sublabel: `${sqlPercent.toFixed(1)}%` },
-    { label: "CPL SQL", value: fmt(cplSql) },
+    { label: "Investimento", value: fmt(investimento), count: null },
+    { label: "Leads", value: String(leads), count: leads },
+    { label: "MQL", value: String(mql), count: mql },
+    { label: "SQL", value: String(sql), count: sql },
+    { label: "Reunião Agendada", value: String(reunioesAgendadas), count: reunioesAgendadas },
+    { label: "Reunião Realizada", value: String(reunioesRealizadas), count: reunioesRealizadas },
+    { label: "Vendas", value: String(vendas), count: vendas },
   ];
 
   return (
@@ -171,6 +180,25 @@ const InsideSales = () => {
                 title="Custo por SQL"
                 value={fmt(cplSql)}
                 icon={TrendingDown}
+              />
+            </div>
+
+            {/* Row 4: Reunião Agendada, Reunião Realizada, Vendas */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <KpiCard
+                title="Reunião Agendada"
+                value={String(reunioesAgendadas)}
+                icon={CalendarCheck}
+              />
+              <KpiCard
+                title="Reunião Realizada"
+                value={String(reunioesRealizadas)}
+                icon={Video}
+              />
+              <KpiCard
+                title="Vendas"
+                value={String(vendas)}
+                icon={ShoppingCart}
               />
             </div>
 
