@@ -55,6 +55,13 @@ function getDateRange(filters: Filters): { start: string; end: string } {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
+function parseFaturamento(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const cleaned = value.replace(/[R$\s.]/g, "").replace(",", ".");
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
+}
+
 export interface LeadsKpis {
   totalLeads: number;
   mql: number;
@@ -78,7 +85,7 @@ export function useLeadsData(filters: Filters) {
 
       let query = supabase
         .from("leads")
-        .select("status, utm_medium, campaign_name")
+        .select("status, utm_medium, campaign_name, faturamento")
         .gte("data_lead", start)
         .lte("data_lead", end);
 
@@ -109,8 +116,14 @@ export function useLeadsData(filters: Filters) {
       for (const l of leads) {
         totalLeads++;
         const s = l.status;
+
+        // Parse faturamento: extract numeric value from string (e.g. "R$ 50.000", "100000", "50k")
+        const faturamentoNum = parseFaturamento(l.faturamento);
+        const isMqlByFaturamento = faturamentoNum !== null && faturamentoNum > 50000;
+
         // Count cumulatively — a lead that reached "venda" also counts as MQL, SQL, etc.
-        if (s === "mql" || s === "sql" || s === "reuniao_agendada" || s === "reuniao_realizada" || s === "venda") {
+        // Also count as MQL if faturamento > 50k
+        if (isMqlByFaturamento || s === "mql" || s === "sql" || s === "reuniao_agendada" || s === "reuniao_realizada" || s === "venda") {
           mql++;
         }
         if (s === "sql" || s === "reuniao_agendada" || s === "reuniao_realizada" || s === "venda") {
