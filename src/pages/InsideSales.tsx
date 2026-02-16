@@ -25,13 +25,17 @@ const InsideSales = () => {
   const [filters, setFilters] = useState<Filters>(() => {
     const savedAccount = localStorage.getItem("selected_ad_account");
     const savedCity = localStorage.getItem("selected_city");
+    const savedDateRange = localStorage.getItem("is_date_range");
+    const savedStartDate = localStorage.getItem("is_start_date");
+    const savedEndDate = localStorage.getItem("is_end_date");
+    const savedProdutos = localStorage.getItem("is_produtos");
     return {
-      dateRange: "30d",
-      startDate: undefined,
-      endDate: undefined,
+      dateRange: savedDateRange || "30d",
+      startDate: savedStartDate ? new Date(savedStartDate) : undefined,
+      endDate: savedEndDate ? new Date(savedEndDate) : undefined,
       adAccount: savedAccount || "all",
       city: savedCity || "all",
-      produtos: [],
+      produtos: savedProdutos ? JSON.parse(savedProdutos) : [],
     };
   });
 
@@ -40,6 +44,10 @@ const InsideSales = () => {
       localStorage.setItem("selected_ad_account", newFilters.adAccount);
     }
     localStorage.setItem("selected_city", newFilters.city);
+    localStorage.setItem("is_date_range", newFilters.dateRange);
+    if (newFilters.startDate) localStorage.setItem("is_start_date", newFilters.startDate.toISOString()); else localStorage.removeItem("is_start_date");
+    if (newFilters.endDate) localStorage.setItem("is_end_date", newFilters.endDate.toISOString()); else localStorage.removeItem("is_end_date");
+    localStorage.setItem("is_produtos", JSON.stringify(newFilters.produtos));
     setFilters(newFilters);
   };
 
