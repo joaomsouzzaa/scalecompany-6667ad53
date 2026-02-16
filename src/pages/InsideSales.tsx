@@ -19,6 +19,7 @@ import { SalesFunnel } from "@/components/SalesFunnel";
 import { fmt, type Filters } from "@/lib/mockData";
 import { fetchAdAccounts, fetchAdSpend } from "@/lib/meta-ads";
 import { useCidades } from "@/hooks/useCidades";
+import { useLeadsData } from "@/hooks/useLeadsData";
 
 const InsideSales = () => {
   const [filters, setFilters] = useState<Filters>(() => {
@@ -46,6 +47,7 @@ const InsideSales = () => {
   const [loadingSpend, setLoadingSpend] = useState(false);
 
   const { data: cidades = [] } = useCidades();
+  const { data: leadsKpis } = useLeadsData(filters);
   const isMetaConnected = localStorage.getItem("meta_connected") === "true";
   const selectedCidade = cidades.find((c) => c.slug === filters.city);
 
@@ -89,21 +91,21 @@ const InsideSales = () => {
     loadSpend();
   }, [loadSpend]);
 
-  // Placeholder values — will be replaced with real data integration
+  // Use real leads data from database
   const investimento = metaInvestimento ?? 0;
-  const leads = 0;
+  const leads = leadsKpis?.totalLeads ?? 0;
   const cpl = leads > 0 ? investimento / leads : 0;
-  const mql = 0;
+  const mql = leadsKpis?.mql ?? 0;
   const mqlPercent = leads > 0 ? (mql / leads) * 100 : 0;
   const cplMql = mql > 0 ? investimento / mql : 0;
-  const sql = 0;
+  const sql = leadsKpis?.sql ?? 0;
   const sqlPercent = mql > 0 ? (sql / mql) * 100 : 0;
   const cplSql = sql > 0 ? investimento / sql : 0;
-  const reunioesAgendadas = 0;
+  const reunioesAgendadas = leadsKpis?.reunioesAgendadas ?? 0;
   const reunioesAgendadasPercent = sql > 0 ? (reunioesAgendadas / sql) * 100 : 0;
-  const reunioesRealizadas = 0;
+  const reunioesRealizadas = leadsKpis?.reunioesRealizadas ?? 0;
   const reunioesRealizadasPercent = reunioesAgendadas > 0 ? (reunioesRealizadas / reunioesAgendadas) * 100 : 0;
-  const vendas = 0;
+  const vendas = leadsKpis?.vendas ?? 0;
   const vendasPercent = reunioesRealizadas > 0 ? (vendas / reunioesRealizadas) * 100 : 0;
 
   const funnelSteps = [
