@@ -684,6 +684,23 @@ const LeadsInsideSales = () => {
               <Input value={editForm.instagram || ""} onChange={(e) => setEditForm({ ...editForm, instagram: e.target.value })} />
             </div>
             <div className="space-y-1">
+              <Label>Status</Label>
+              <Select value={editForm.status || "lead"} onValueChange={(v) => setEditForm({ ...editForm, status: v })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="lead">Lead</SelectItem>
+                  <SelectItem value="mql">MQL</SelectItem>
+                  <SelectItem value="sql">SQL</SelectItem>
+                  <SelectItem value="reuniao_agendada">Reunião Agendada</SelectItem>
+                  <SelectItem value="reuniao_realizada">Reunião Realizada</SelectItem>
+                  <SelectItem value="venda">Venda</SelectItem>
+                  <SelectItem value="perdido">Perdido</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
               <Label>SQL</Label>
               <Select value={editForm.is_sql || ""} onValueChange={(v) => setEditForm({ ...editForm, is_sql: v || null })}>
                 <SelectTrigger>
@@ -742,23 +759,6 @@ const LeadsInsideSales = () => {
             <div className="space-y-1 col-span-2">
               <Label>Tags</Label>
               <Input value={editForm.tags || ""} onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })} />
-            </div>
-            <div className="space-y-1">
-              <Label>Status</Label>
-              <Select value={editForm.status || "lead"} onValueChange={(v) => setEditForm({ ...editForm, status: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="lead">Lead</SelectItem>
-                  <SelectItem value="mql">MQL</SelectItem>
-                  <SelectItem value="sql">SQL</SelectItem>
-                  <SelectItem value="reuniao_agendada">Reunião Agendada</SelectItem>
-                  <SelectItem value="reuniao_realizada">Reunião Realizada</SelectItem>
-                  <SelectItem value="venda">Venda</SelectItem>
-                  <SelectItem value="perdido">Perdido</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </div>
           <DialogFooter>
