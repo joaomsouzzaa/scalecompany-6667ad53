@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
       instagram: payload.contact_qual_o_do_instagram || payload.Instagram || payload.instagram || null,
       area_atuacao: payload.deal_qual_sua_area_de_atu || payload["área de atuação"] || payload.area_atuacao || null,
       papel: payload.contact_qual_e_o_seu_papel_h || payload["Seu papel hoje?"] || payload.papel || null,
-      tags: payload.contact_tag || payload.tags || null,
+      tags: normalizeTags(payload.contact_tag || payload.tags || null),
       is_sql: detectSqlTag(payload.contact_tag || payload.tags || "") ? "Sim" : null,
       payload,
     };
@@ -144,12 +144,21 @@ Deno.serve(async (req) => {
   }
 });
 
+function normalizeTags(tags: unknown): string | null {
+  if (!tags) return null;
+  if (Array.isArray(tags)) {
+    const names = tags.map((t) =>
+      typeof t === "object" && t !== null && "name" in t ? String(t.name) : String(t)
+    );
+    return names.join(", ");
+  }
+  return String(tags);
+}
+
 function detectSqlTag(tags: unknown): boolean {
   if (!tags) return false;
-  if (Array.isArray(tags)) {
-    return tags.some((t) => String(t).toLowerCase().trim() === "sql");
-  }
-  return String(tags).toLowerCase().split(",").some((t) => t.trim() === "sql");
+  const normalized = normalizeTags(tags) || "";
+  return normalized.toLowerCase().split(",").some((t) => t.trim() === "sql");
 }
 
 function mapLeadStatus(status: string): string {
