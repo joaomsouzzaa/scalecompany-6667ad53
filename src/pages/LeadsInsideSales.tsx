@@ -53,7 +53,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { TagSelector } from "@/components/TagSelector";
 
-type SortKey = "data_lead" | "nome" | "email" | "telefone" | "status" | "is_sql" | "utm_medium" | "utm_campaign" | "utm_content" | "utm_term" | "cidade" | "deal_user" | "tags" | "whatsapp" | "instagram" | "area_atuacao" | "papel" | "faturamento" | "situacao_atual" | "ad_name" | "campaign_name";
+type SortKey = "data_lead" | "nome" | "email" | "telefone" | "status" | "is_sql" | "is_reuniao_agendada" | "utm_medium" | "utm_campaign" | "utm_content" | "utm_term" | "cidade" | "deal_user" | "tags" | "whatsapp" | "instagram" | "area_atuacao" | "papel" | "faturamento" | "situacao_atual" | "ad_name" | "campaign_name";
 type SortDir = "asc" | "desc";
 
 type LeadRow = {
@@ -80,6 +80,7 @@ type LeadRow = {
   ad_name: string | null;
   campaign_name: string | null;
   is_sql: string | null;
+  is_reuniao_agendada: string | null;
 };
 
 function getDateRange(dateRange: string, startDate?: Date, endDate?: Date) {
@@ -191,7 +192,7 @@ const LeadsInsideSales = () => {
     queryFn: async () => {
       let query = supabase
         .from("leads")
-        .select("id, data_lead, nome, email, telefone, status, is_sql, utm_medium, utm_campaign, utm_content, utm_term, cidade, deal_user, tags, whatsapp, instagram, area_atuacao, papel, faturamento, situacao_atual, ad_name, campaign_name")
+        .select("id, data_lead, nome, email, telefone, status, is_sql, is_reuniao_agendada, utm_medium, utm_campaign, utm_content, utm_term, cidade, deal_user, tags, whatsapp, instagram, area_atuacao, papel, faturamento, situacao_atual, ad_name, campaign_name")
         .gte("data_lead", start)
         .lte("data_lead", end)
         .order("data_lead", { ascending: false });
@@ -298,16 +299,18 @@ const LeadsInsideSales = () => {
       ad_name: l.ad_name,
       campaign_name: l.campaign_name,
       is_sql: l.is_sql,
+      is_reuniao_agendada: l.is_reuniao_agendada,
     });
   };
 
   const handleSaveEdit = async () => {
     if (!editingLead) return;
 
-    // Auto-sync is_sql based on tags
+    // Auto-sync is_sql and is_reuniao_agendada based on tags
     const tags = editForm.tags || "";
-    const hasSqlTag = tags.toLowerCase().split(",").some((t) => t.trim() === "sql");
-    const computedIsSql = hasSqlTag ? "Sim" : null;
+    const tagList = tags.toLowerCase().split(",").map((t) => t.trim());
+    const computedIsSql = tagList.some((t) => t === "sql") ? "Sim" : null;
+    const computedIsRa = tagList.some((t) => t === "reunião agendada" || t === "reuniao agendada") ? "Sim" : null;
 
     const { error } = await supabase
       .from("leads")
@@ -332,6 +335,7 @@ const LeadsInsideSales = () => {
         ad_name: editForm.ad_name,
         campaign_name: editForm.campaign_name,
         is_sql: computedIsSql,
+        is_reuniao_agendada: computedIsRa,
       })
       .eq("id", editingLead.id);
 
@@ -503,6 +507,7 @@ const LeadsInsideSales = () => {
                     {sortableHead("WhatsApp Digitado", "whatsapp")}
                     {sortableHead("Instagram", "instagram")}
                     {sortableHead("SQL", "is_sql")}
+                    {sortableHead("Reunião Agendada", "is_reuniao_agendada")}
                     {sortableHead("Área de Atuação", "area_atuacao")}
                     {sortableHead("Papel na Empresa", "papel")}
                     {sortableHead("Faturamento Atual", "faturamento")}
@@ -559,6 +564,13 @@ const LeadsInsideSales = () => {
                         <TableCell>{l.instagram || "—"}</TableCell>
                         <TableCell>
                           {l.is_sql ? (
+                            <Badge variant="default">Sim</Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {l.is_reuniao_agendada ? (
                             <Badge variant="default">Sim</Badge>
                           ) : (
                             <span className="text-muted-foreground">—</span>
