@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { useColumnResize } from "@/hooks/useColumnResize";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { DateRangePicker } from "@/components/DateRangePicker";
@@ -156,6 +157,7 @@ const VendasEventos = () => {
   const [showBulkDelete, setShowBulkDelete] = useState(false);
 
   const queryClient = useQueryClient();
+  const { tableRef, onResizeStart } = useColumnResize();
   const { data: cidades = [] } = useCidades();
   const hiddenCidades = getHiddenCidades();
   const visibleCidades = cidades.filter((c) => !hiddenCidades.includes(c.id));
@@ -234,7 +236,7 @@ const VendasEventos = () => {
   };
 
   const sortableHead = (label: string, col: SortKey, className?: string) => (
-    <TableHead className={`${className || ""} overflow-hidden`} style={{ resize: "horizontal", minWidth: 80 }}>
+    <TableHead className={`${className || ""} relative group`} style={{ minWidth: 80 }}>
       <button
         type="button"
         className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors whitespace-nowrap"
@@ -243,6 +245,11 @@ const VendasEventos = () => {
         {label}
         <SortIcon col={col} />
       </button>
+      <div
+        onMouseDown={onResizeStart}
+        onTouchStart={onResizeStart}
+        className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize bg-border/0 hover:bg-primary/40 group-hover:bg-border/30 transition-colors"
+      />
     </TableHead>
   );
 
