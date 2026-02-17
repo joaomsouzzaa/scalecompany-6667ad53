@@ -64,6 +64,7 @@ Deno.serve(async (req) => {
       papel: payload.contact_qual_e_o_seu_papel_h || payload["Seu papel hoje?"] || payload.papel || null,
       tags: normalizeTags(payload.contact_tag || payload.tags || null),
       is_sql: detectSqlTag(payload.contact_tag || payload.tags || "") ? "Sim" : null,
+      is_reuniao_agendada: detectRaTag(payload.contact_tag || payload.tags || "") ? "Sim" : null,
       payload,
     };
 
@@ -109,10 +110,11 @@ Deno.serve(async (req) => {
 
     if (existingId) {
       const hasSqlTag = detectSqlTag(payload.contact_tag || payload.tags || "");
+      const hasRaTag = detectRaTag(payload.contact_tag || payload.tags || "");
       let updateError: string | null = null;
 
-      if (hasSqlTag) {
-        // SQL tag: only update is_sql, append SQL to existing tags
+      if (hasSqlTag || hasRaTag) {
+        // Tag detected: fetch existing tags to merge
         const { data: existingLead } = await supabase
           .from("leads")
           .select("tags")
@@ -120,17 +122,28 @@ Deno.serve(async (req) => {
           .maybeSingle();
 
         let mergedTags = existingLead?.tags || "";
-        if (!mergedTags.toLowerCase().split(",").some((t: string) => t.trim().toLowerCase() === "sql")) {
+
+        // Append SQL tag if needed
+        if (hasSqlTag && !mergedTags.toLowerCase().split(",").some((t: string) => t.trim().toLowerCase() === "sql")) {
           mergedTags = mergedTags ? `${mergedTags}, SQL` : "SQL";
         }
+        // Append Reunião Agendada tag if needed
+        const raTagName = "Reunião Agendada";
+        if (hasRaTag && !mergedTags.toLowerCase().split(",").some((t: string) => t.trim().toLowerCase().includes("reuniao agendada") || t.trim().toLowerCase().includes("reunião agendada"))) {
+          mergedTags = mergedTags ? `${mergedTags}, ${raTagName}` : raTagName;
+        }
+
+        const updateFields: Record<string, unknown> = { tags: mergedTags, payload: lead.payload };
+        if (hasSqlTag) updateFields.is_sql = "Sim";
+        if (hasRaTag) updateFields.is_reuniao_agendada = "Sim";
 
         const { error } = await supabase
           .from("leads")
-          .update({ is_sql: "Sim", tags: mergedTags, payload: lead.payload })
+          .update(updateFields)
           .eq("id", existingId);
         if (error) updateError = error.message;
       } else {
-        // No SQL tag: only update data_lead
+        // No special tag: only update data_lead
         const { error } = await supabase
           .from("leads")
           .update({ data_lead: lead.data_lead, payload: lead.payload })
@@ -191,6 +204,15 @@ function detectSqlTag(tags: unknown): boolean {
   if (!tags) return false;
   const normalized = normalizeTags(tags) || "";
   return normalized.toLowerCase().split(",").some((t) => t.trim() === "sql");
+}
+
+function detectRaTag(tags: unknown): boolean {
+  if (!tags) return false;
+  const normalized = (normalizeTags(tags) || "").toLowerCase();
+  return normalized.split(",").some((t) => {
+    const trimmed = t.trim();
+    return trimmed === "reunião agendada" || trimmed === "reuniao agendada" || trimmed === "ra";
+  });
 }
 
 function mapLeadStatus(status: string): string {
