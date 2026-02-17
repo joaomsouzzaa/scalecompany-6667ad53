@@ -1,0 +1,1 @@
+ALTER TABLE public.leads ADD COLUMN is_reuniao_realizada TEXT DEFAULT NULL;

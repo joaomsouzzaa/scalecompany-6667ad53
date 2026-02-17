@@ -65,6 +65,7 @@ Deno.serve(async (req) => {
       tags: normalizeTags(payload.contact_tag || payload.tags || null),
       is_sql: detectSqlTag(payload.contact_tag || payload.tags || "") ? "Sim" : null,
       is_reuniao_agendada: detectRaTag(payload.contact_tag || payload.tags || "") ? "Sim" : null,
+      is_reuniao_realizada: detectRrTag(payload.contact_tag || payload.tags || "") ? "Sim" : null,
       payload,
     };
 
@@ -111,9 +112,10 @@ Deno.serve(async (req) => {
     if (existingId) {
       const hasSqlTag = detectSqlTag(payload.contact_tag || payload.tags || "");
       const hasRaTag = detectRaTag(payload.contact_tag || payload.tags || "");
+      const hasRrTag = detectRrTag(payload.contact_tag || payload.tags || "");
       let updateError: string | null = null;
 
-      if (hasSqlTag || hasRaTag) {
+      if (hasSqlTag || hasRaTag || hasRrTag) {
         // Tag detected: fetch existing tags to merge
         const { data: existingLead } = await supabase
           .from("leads")
@@ -132,10 +134,16 @@ Deno.serve(async (req) => {
         if (hasRaTag && !mergedTags.toLowerCase().split(",").some((t: string) => t.trim().toLowerCase().includes("reuniao agendada") || t.trim().toLowerCase().includes("reunião agendada"))) {
           mergedTags = mergedTags ? `${mergedTags}, ${raTagName}` : raTagName;
         }
+        // Append Reunião Realizada tag if needed
+        const rrTagName = "Reunião Realizada";
+        if (hasRrTag && !mergedTags.toLowerCase().split(",").some((t: string) => t.trim().toLowerCase().includes("reuniao realizada") || t.trim().toLowerCase().includes("reunião realizada"))) {
+          mergedTags = mergedTags ? `${mergedTags}, ${rrTagName}` : rrTagName;
+        }
 
         const updateFields: Record<string, unknown> = { tags: mergedTags, payload: lead.payload };
         if (hasSqlTag) updateFields.is_sql = "Sim";
         if (hasRaTag) updateFields.is_reuniao_agendada = "Sim";
+        if (hasRrTag) updateFields.is_reuniao_realizada = "Sim";
 
         const { error } = await supabase
           .from("leads")
@@ -212,6 +220,15 @@ function detectRaTag(tags: unknown): boolean {
   return normalized.split(",").some((t) => {
     const trimmed = t.trim();
     return trimmed === "reunião agendada" || trimmed === "reuniao agendada" || trimmed === "ra";
+  });
+}
+
+function detectRrTag(tags: unknown): boolean {
+  if (!tags) return false;
+  const normalized = (normalizeTags(tags) || "").toLowerCase();
+  return normalized.split(",").some((t) => {
+    const trimmed = t.trim();
+    return trimmed === "reunião realizada" || trimmed === "reuniao realizada" || trimmed === "rr";
   });
 }
 

@@ -53,7 +53,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { TagSelector } from "@/components/TagSelector";
 
-type SortKey = "data_lead" | "nome" | "email" | "telefone" | "status" | "is_sql" | "is_reuniao_agendada" | "utm_medium" | "utm_campaign" | "utm_content" | "utm_term" | "cidade" | "deal_user" | "tags" | "whatsapp" | "instagram" | "area_atuacao" | "papel" | "faturamento" | "situacao_atual" | "ad_name" | "campaign_name";
+type SortKey = "data_lead" | "nome" | "email" | "telefone" | "status" | "is_sql" | "is_reuniao_agendada" | "is_reuniao_realizada" | "utm_medium" | "utm_campaign" | "utm_content" | "utm_term" | "cidade" | "deal_user" | "tags" | "whatsapp" | "instagram" | "area_atuacao" | "papel" | "faturamento" | "situacao_atual" | "ad_name" | "campaign_name";
 type SortDir = "asc" | "desc";
 
 type LeadRow = {
@@ -81,6 +81,7 @@ type LeadRow = {
   campaign_name: string | null;
   is_sql: string | null;
   is_reuniao_agendada: string | null;
+  is_reuniao_realizada: string | null;
 };
 
 function getDateRange(dateRange: string, startDate?: Date, endDate?: Date) {
@@ -192,7 +193,7 @@ const LeadsInsideSales = () => {
     queryFn: async () => {
       let query = supabase
         .from("leads")
-        .select("id, data_lead, nome, email, telefone, status, is_sql, is_reuniao_agendada, utm_medium, utm_campaign, utm_content, utm_term, cidade, deal_user, tags, whatsapp, instagram, area_atuacao, papel, faturamento, situacao_atual, ad_name, campaign_name")
+        .select("id, data_lead, nome, email, telefone, status, is_sql, is_reuniao_agendada, is_reuniao_realizada, utm_medium, utm_campaign, utm_content, utm_term, cidade, deal_user, tags, whatsapp, instagram, area_atuacao, papel, faturamento, situacao_atual, ad_name, campaign_name")
         .gte("data_lead", start)
         .lte("data_lead", end)
         .order("data_lead", { ascending: false });
@@ -300,6 +301,7 @@ const LeadsInsideSales = () => {
       campaign_name: l.campaign_name,
       is_sql: l.is_sql,
       is_reuniao_agendada: l.is_reuniao_agendada,
+      is_reuniao_realizada: l.is_reuniao_realizada,
     });
   };
 
@@ -311,6 +313,7 @@ const LeadsInsideSales = () => {
     const tagList = tags.toLowerCase().split(",").map((t) => t.trim());
     const computedIsSql = tagList.some((t) => t === "sql") ? "Sim" : null;
     const computedIsRa = tagList.some((t) => t === "reunião agendada" || t === "reuniao agendada") ? "Sim" : null;
+    const computedIsRr = tagList.some((t) => t === "reunião realizada" || t === "reuniao realizada") ? "Sim" : null;
 
     const { error } = await supabase
       .from("leads")
@@ -336,6 +339,7 @@ const LeadsInsideSales = () => {
         campaign_name: editForm.campaign_name,
         is_sql: computedIsSql,
         is_reuniao_agendada: computedIsRa,
+        is_reuniao_realizada: computedIsRr,
       })
       .eq("id", editingLead.id);
 
@@ -508,6 +512,7 @@ const LeadsInsideSales = () => {
                     {sortableHead("Instagram", "instagram")}
                     {sortableHead("SQL", "is_sql")}
                     {sortableHead("Reunião Agendada", "is_reuniao_agendada")}
+                    {sortableHead("Reunião Realizada", "is_reuniao_realizada")}
                     {sortableHead("Área de Atuação", "area_atuacao")}
                     {sortableHead("Papel na Empresa", "papel")}
                     {sortableHead("Faturamento Atual", "faturamento")}
@@ -571,6 +576,13 @@ const LeadsInsideSales = () => {
                         </TableCell>
                         <TableCell>
                           {l.is_reuniao_agendada ? (
+                            <Badge variant="default">Sim</Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {l.is_reuniao_realizada ? (
                             <Badge variant="default">Sim</Badge>
                           ) : (
                             <span className="text-muted-foreground">—</span>

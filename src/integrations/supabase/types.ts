@@ -52,6 +52,7 @@ export type Database = {
           id: string
           instagram: string | null
           is_reuniao_agendada: string | null
+          is_reuniao_realizada: string | null
           is_sql: string | null
           nome: string | null
           papel: string | null
@@ -80,6 +81,7 @@ export type Database = {
           id?: string
           instagram?: string | null
           is_reuniao_agendada?: string | null
+          is_reuniao_realizada?: string | null
           is_sql?: string | null
           nome?: string | null
           papel?: string | null
@@ -108,6 +110,7 @@ export type Database = {
           id?: string
           instagram?: string | null
           is_reuniao_agendada?: string | null
+          is_reuniao_realizada?: string | null
           is_sql?: string | null
           nome?: string | null
           papel?: string | null
