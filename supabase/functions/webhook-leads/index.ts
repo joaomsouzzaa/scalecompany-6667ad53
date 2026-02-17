@@ -144,9 +144,12 @@ Deno.serve(async (req) => {
   }
 });
 
-function detectSqlTag(tags: string): boolean {
+function detectSqlTag(tags: unknown): boolean {
   if (!tags) return false;
-  return tags.toLowerCase().split(",").some((t) => t.trim() === "sql");
+  if (Array.isArray(tags)) {
+    return tags.some((t) => String(t).toLowerCase().trim() === "sql");
+  }
+  return String(tags).toLowerCase().split(",").some((t) => t.trim() === "sql");
 }
 
 function mapLeadStatus(status: string): string {
