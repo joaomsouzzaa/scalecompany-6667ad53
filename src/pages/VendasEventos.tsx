@@ -871,8 +871,8 @@ const VendasEventos = () => {
                   <SelectValue placeholder="Selecione o produto" />
                 </SelectTrigger>
                 <SelectContent>
-                  {produtos.filter(p => p.ativo).map((p) => (
-                    <SelectItem key={p.id} value={p.nome}>{p.nome}</SelectItem>
+                  {visibleCidades.map((c) => (
+                    <SelectItem key={c.id} value={c.nome}>{c.nome}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
