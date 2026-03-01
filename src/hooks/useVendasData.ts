@@ -113,6 +113,7 @@ function calcularKpis(vendas: VendaRow[]) {
   // Counters excluding manual sales (convites) — used for CAC calculation
   let participantesParaCAC = 0;
   let vendasParaCAC = 0;
+  let totalConvidados = 0;
   const pagamentoPorMetodo: Record<string, number> = {};
 
   for (const v of vendas) {
@@ -139,6 +140,8 @@ function calcularKpis(vendas: VendaRow[]) {
     if (!isManual) {
       vendasParaCAC += 1;
       participantesParaCAC += qty;
+    } else {
+      totalConvidados += qty;
     }
 
     if (vip) {
@@ -175,6 +178,7 @@ function calcularKpis(vendas: VendaRow[]) {
     vendasDuplas,
     totalVips,
     participantes,
+    totalConvidados,
     participantesParaCAC,
     vendasParaCAC,
     ticketMedio,
