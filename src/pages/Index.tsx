@@ -125,8 +125,9 @@ const Index = () => {
   const kpi = vendasData || {
     investimentoTotal: 0, bilheteriaTotal: 0, cacVenda: 0, cacParticipante: 0,
     participantes: 0, participantesParaCAC: 0, vendasParaCAC: 0, totalVips: 0,
-    vendasIndividuais: 0, vendasDuplas: 0, ticketMedio: 0, bilheteriaIngressos: 0,
-    bilheteriaVip: 0, lucro: 0, chartData: [], pagamentoPorMetodo: {},
+    totalConvidados: 0, vendasIndividuais: 0, vendasDuplas: 0, ticketMedio: 0,
+    bilheteriaIngressos: 0, bilheteriaVip: 0, lucro: 0, chartData: [] as any[],
+    pagamentoPorMetodo: {} as Record<string, number>,
   };
 
   const investimentoDisplay = metaInvestimento !== null ? metaInvestimento : kpi.investimentoTotal;
@@ -245,6 +246,11 @@ const Index = () => {
                 title="Total de VIPs"
                 value={String(kpi.totalVips)}
                 icon={Crown}
+              />
+              <KpiCard
+                title="Convidados"
+                value={String(kpi.totalConvidados)}
+                icon={Gift}
               />
               <KpiCard
                 title="Projeção de Participantes"
