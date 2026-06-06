@@ -71,28 +71,36 @@ Deno.serve(async (req) => {
       };
     } else if (payload.event || payload.webhook_event_type) {
       // ===== Kiwify =====
+      const product = payload.Product || payload.product || {};
+      const customer = payload.Customer || payload.customer || {};
+      const commissions = payload.Commissions || {};
+      const tracking = payload.TrackingParameters || {};
+      const productName = fixMojibake(product.product_name || product.name || "") || null;
+      // charge_amount vem em centavos (ex.: 24700 = R$ 247,00)
+      const chargeAmount = commissions.charge_amount ?? commissions.product_base_price;
+
       venda = {
         plataforma: "kiwify",
         id_transacao: payload.order_id || payload.Transaction?.id || null,
-        status: mapStatus(payload.order_status || payload.event || "aprovada"),
-        valor: parseFloat(payload.order_price || payload.Transaction?.amount || "0"),
-        quantidade: 1,
-        nome_comprador: payload.Customer?.full_name || payload.customer?.name || null,
-        email_comprador: payload.Customer?.email || payload.customer?.email || null,
-        telefone_comprador: payload.Customer?.mobile || payload.customer?.phone || null,
-        documento: null,
-        produto: payload.Product?.name || payload.product?.name || null,
-        tipo_ingresso: detectTipoIngresso(payload.Product?.name || payload.product?.name || ""),
+        status: mapStatus(payload.order_status || payload.webhook_event_type || payload.event || "aprovada"),
+        valor: chargeAmount != null ? Number(chargeAmount) / 100 : parseFloat(payload.order_price || payload.Transaction?.amount || "0"),
+        quantidade: Array.isArray(payload.event_tickets) && payload.event_tickets.length > 0 ? payload.event_tickets.length : 1,
+        nome_comprador: fixMojibake(customer.full_name || customer.name || "") || null,
+        email_comprador: customer.email || null,
+        telefone_comprador: customer.mobile || customer.phone || null,
+        documento: customer.CPF || customer.cnpj || null,
+        produto: productName,
+        tipo_ingresso: detectTipoIngresso(`${productName || ""} ${payload.event_batch?.name || ""}`),
         produtor: null,
-        cidade: null,
-        metodo_pagamento: null,
+        cidade: extractCidadeFromKiwify(productName || ""),
+        metodo_pagamento: payload.payment_method || null,
         cupom: null,
-        utm_source: null,
-        utm_medium: null,
-        utm_campaign: null,
-        utm_content: null,
-        utm_term: null,
-        data_venda: payload.created_at || new Date().toISOString(),
+        utm_source: tracking.utm_source || null,
+        utm_medium: tracking.utm_medium || null,
+        utm_campaign: tracking.utm_campaign || null,
+        utm_content: tracking.utm_content || null,
+        utm_term: tracking.utm_term || null,
+        data_venda: payload.approved_date || payload.created_at || new Date().toISOString(),
         payload,
       };
     } else {
@@ -208,6 +216,30 @@ function detectTipoIngresso(productName: string): string | null {
   if (name.includes("silver")) return "silver";
   if (name.includes("bronze")) return "bronze";
   return null;
+}
+
+// Kiwify: nome do produto no formato "Workshop Scale | Cidade - UF | data"
+function extractCidadeFromKiwify(productName: string): string | null {
+  if (!productName) return null;
+  const parts = productName.split("|");
+  if (parts.length >= 2) {
+    // parts[1] = "Cidade - UF" → pega o trecho antes do hífen
+    const cidade = parts[1].split(/[-–]/)[0].trim();
+    if (cidade) return cidade;
+  }
+  // fallback para o padrão dos outros produtos
+  return extractCidadeFromProduct(productName);
+}
+
+// Corrige texto UTF-8 que chegou decodificado como latin-1 (ex.: "BelÃ©m" -> "Belém").
+// Strings já corretas lançam erro no decode e são retornadas intactas.
+function fixMojibake(s: string): string {
+  if (!s) return s;
+  try {
+    return decodeURIComponent(escape(s));
+  } catch {
+    return s;
+  }
 }
 
 function extractCidadeFromProduct(productName: string): string | null {
