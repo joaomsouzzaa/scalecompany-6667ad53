@@ -77,8 +77,10 @@ async function graphApiFetch<T>(path: string, params: Record<string, string> = {
       markTokenExpired();
     }
     // Detect rate limiting and activate global cooldown
-    if (errCode === 32 || errCode === 4 || res.status === 429 ||
+    // (code 17 = "User request limit reached", 4/32 = app/account limits)
+    if (errCode === 32 || errCode === 4 || errCode === 17 || res.status === 429 ||
         errMsg.toLowerCase().includes("too many calls") ||
+        errMsg.toLowerCase().includes("request limit") ||
         errMsg.toLowerCase().includes("rate limit")) {
       console.warn("[Meta API] Rate limited — activating 5min cooldown");
       flagRateLimited();
@@ -202,6 +204,23 @@ function campaignMatchesSlug(name: string, variants: string[], strictSales = fal
 const _spendCache = new Map<string, { data: any; ts: number }>();
 const SPEND_CACHE_TTL = 10 * 60 * 1000;
 
+// Persistência da última leitura boa no localStorage, para usar como fallback
+// quando a API estourar o limite (evita zerar investimento/orçamento/projeção).
+function persistResult(key: string, value: unknown) {
+  try {
+    localStorage.setItem("meta_cache_" + key, JSON.stringify({ v: value, ts: Date.now() }));
+  } catch { /* storage cheio/indisponível — ignora */ }
+}
+function loadPersisted<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem("meta_cache_" + key);
+    if (!raw) return null;
+    return (JSON.parse(raw).v as T) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function spendCacheKey(ids: string[], dateRange: string, start?: Date, end?: Date, slug?: string) {
   return `${ids.sort().join(",")}_${dateRange}_${start?.toISOString() || ""}_${end?.toISOString() || ""}_${slug || ""}`;
 }
@@ -222,31 +241,22 @@ export async function fetchAdSpend(
     : buildTimeRange(dateRange));
   const timeRangeParam = JSON.stringify(timeRange);
 
-  const results = await Promise.all(
-    accountIds.map(async (id) => {
-      try {
+  try {
+    const results = await Promise.all(
+      accountIds.map(async (id) => {
         if (campaignSlug) {
-          // Busca as campanhas e filtra pelo(s) slug(s) no nome (client-side, multi-slug)
+          // UMA chamada por conta: insights no nível de campanha; filtra por nome (multi-slug)
           const variants = slugVariants(campaignSlug);
-          const campaignsRes = await graphApiFetch<{ data: Array<{ id: string; name: string }> }>(
-            `/${id}/campaigns`,
-            { fields: "id,name", limit: "500" }
+          const res = await graphApiFetch<{ data: Array<{ spend: string; campaign_name: string }> }>(
+            `/${id}/insights`,
+            { level: "campaign", fields: "spend,campaign_name", time_range: timeRangeParam, limit: "500" }
           );
-          const campaigns = (campaignsRes.data || []).filter((c) => campaignMatchesSlug(c.name, variants, strictSales));
-          if (campaigns.length === 0) return { accountId: id, accountName: "", spend: 0 };
-
           let totalSpend = 0;
-          await Promise.all(
-            campaigns.map(async (c) => {
-              try {
-                const insightRes = await graphApiFetch<{ data: Array<{ spend: string }> }>(
-                  `/${c.id}/insights`,
-                  { fields: "spend", time_range: timeRangeParam }
-                );
-                totalSpend += insightRes.data?.[0]?.spend ? parseFloat(insightRes.data[0].spend) : 0;
-              } catch {}
-            })
-          );
+          for (const row of res.data || []) {
+            if (campaignMatchesSlug(row.campaign_name, variants, strictSales)) {
+              totalSpend += parseFloat(row.spend) || 0;
+            }
+          }
           return { accountId: id, accountName: "", spend: totalSpend };
         } else {
           const res = await graphApiFetch<{ data: Array<{ spend: string }> }>(
@@ -256,14 +266,21 @@ export async function fetchAdSpend(
           const spend = res.data?.[0]?.spend ? parseFloat(res.data[0].spend) : 0;
           return { accountId: id, accountName: "", spend };
         }
-      } catch {
-        return { accountId: id, accountName: "", spend: 0 };
-      }
-    })
-  );
+      })
+    );
 
-  _spendCache.set(cacheKey, { data: results, ts: Date.now() });
-  return results;
+    _spendCache.set(cacheKey, { data: results, ts: Date.now() });
+    persistResult(cacheKey, results);
+    return results;
+  } catch (e) {
+    // Estouro de limite / erro de rede: usa a última leitura boa em vez de zerar
+    const fb = loadPersisted<AdSpendResult[]>(cacheKey);
+    if (fb) {
+      console.warn("[Meta API] fetchAdSpend via fallback (última leitura salva)");
+      return fb;
+    }
+    throw e;
+  }
 }
 
 /** Fetch daily spend breakdown (date → spend) for accounts, optionally filtered by campaign slug */
@@ -283,50 +300,38 @@ export async function fetchDailySpendBreakdown(
     : buildTimeRange(dateRange));
   const timeRangeParam = JSON.stringify(timeRange);
 
-  const dailyMap = new Map<string, number>();
+  try {
+    const dailyMap = new Map<string, number>();
+    const variants = campaignSlug ? slugVariants(campaignSlug) : [];
 
-  await Promise.all(
-    accountIds.map(async (id) => {
-      try {
-        if (campaignSlug) {
-          const variants = slugVariants(campaignSlug);
-          const campaignsRes = await graphApiFetch<{ data: Array<{ id: string; name: string }> }>(
-            `/${id}/campaigns`,
-            { fields: "id,name", limit: "500" }
-          );
-          const campaigns = (campaignsRes.data || []).filter((c) => campaignMatchesSlug(c.name, variants, strictSales));
-          await Promise.all(
-            campaigns.map(async (c) => {
-              try {
-                const insightRes = await graphApiFetch<{ data: Array<{ spend: string; date_start: string }> }>(
-                  `/${c.id}/insights`,
-                  { fields: "spend", time_range: timeRangeParam, time_increment: "1" }
-                );
-                for (const row of insightRes.data || []) {
-                  const date = row.date_start;
-                  const spend = parseFloat(row.spend) || 0;
-                  dailyMap.set(date, (dailyMap.get(date) || 0) + spend);
-                }
-              } catch {}
-            })
-          );
-        } else {
-          const res = await graphApiFetch<{ data: Array<{ spend: string; date_start: string }> }>(
-            `/${id}/insights`,
-            { fields: "spend", time_range: timeRangeParam, time_increment: "1" }
-          );
-          for (const row of res.data || []) {
-            const date = row.date_start;
-            const spend = parseFloat(row.spend) || 0;
-            dailyMap.set(date, (dailyMap.get(date) || 0) + spend);
-          }
+    await Promise.all(
+      accountIds.map(async (id) => {
+        // UMA chamada por conta: insights diários no nível de campanha
+        const res = await graphApiFetch<{ data: Array<{ spend: string; date_start: string; campaign_name?: string }> }>(
+          `/${id}/insights`,
+          campaignSlug
+            ? { level: "campaign", fields: "spend,campaign_name", time_range: timeRangeParam, time_increment: "1", limit: "500" }
+            : { fields: "spend", time_range: timeRangeParam, time_increment: "1", limit: "500" }
+        );
+        for (const row of res.data || []) {
+          if (campaignSlug && !campaignMatchesSlug(row.campaign_name || "", variants, strictSales)) continue;
+          const spend = parseFloat(row.spend) || 0;
+          dailyMap.set(row.date_start, (dailyMap.get(row.date_start) || 0) + spend);
         }
-      } catch {}
-    })
-  );
+      })
+    );
 
-  _spendCache.set(cacheKey, { data: dailyMap, ts: Date.now() });
-  return dailyMap;
+    _spendCache.set(cacheKey, { data: dailyMap, ts: Date.now() });
+    persistResult(cacheKey, Array.from(dailyMap.entries()));
+    return dailyMap;
+  } catch (e) {
+    const fb = loadPersisted<Array<[string, number]>>(cacheKey);
+    if (fb) {
+      console.warn("[Meta API] fetchDailySpendBreakdown via fallback (última leitura salva)");
+      return new Map(fb);
+    }
+    throw e;
+  }
 }
 
 /** Fetch the sum of daily budgets for active campaigns matching a slug.
@@ -340,49 +345,56 @@ export async function fetchCampaignDailyBudget(
   const cached = _spendCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < SPEND_CACHE_TTL) return cached.data;
 
-  let totalDailyBudget = 0;
+  try {
+    const variants = slugVariants(slug);
+    let totalDailyBudget = 0;
 
-  await Promise.all(
-    accountIds.map(async (id) => {
-      try {
-        const variants = slugVariants(slug);
+    await Promise.all(
+      accountIds.map(async (id) => {
+        // 1 chamada: campanhas ativas que casam o slug
         const campaignsRes = await graphApiFetch<{
           data: Array<{ id: string; name: string; daily_budget?: string; status: string }>;
-        }>(`/${id}/campaigns`, {
-          fields: "id,name,daily_budget,status",
-          limit: "500",
-        });
+        }>(`/${id}/campaigns`, { fields: "id,name,daily_budget,status", limit: "500" });
+        const campaigns = (campaignsRes.data || []).filter(
+          (c) => c.status === "ACTIVE" && campaignMatchesSlug(c.name, variants, strictSales)
+        );
+        if (campaigns.length === 0) return;
 
-        const campaigns = (campaignsRes.data || []).filter((c) => campaignMatchesSlug(c.name, variants, strictSales));
+        // Campanhas com orçamento no nível de campanha (CBO)
+        const semBudgetCampanha = new Set<string>();
         for (const c of campaigns) {
-          if (c.status !== "ACTIVE") continue;
-
           if (c.daily_budget && parseFloat(c.daily_budget) > 0) {
-            // Campaign-level daily_budget (returned in cents)
             totalDailyBudget += parseFloat(c.daily_budget) / 100;
           } else {
-            // No campaign-level budget — check adsets for this campaign
-            try {
-              const adsetsRes = await graphApiFetch<{
-                data: Array<{ id: string; daily_budget?: string; status: string }>;
-              }>(`/${c.id}/adsets`, {
-                fields: "id,daily_budget,status",
-                limit: "500",
-              });
-              const adsets = adsetsRes.data || [];
-              for (const adset of adsets) {
-                if (adset.status === "ACTIVE" && adset.daily_budget && parseFloat(adset.daily_budget) > 0) {
-                  totalDailyBudget += parseFloat(adset.daily_budget) / 100;
-                }
-              }
-            } catch {}
+            semBudgetCampanha.add(c.id);
           }
         }
-      } catch {}
-    })
-  );
 
-  console.log(`[Projeção] slug=${slug} dailyBudget=${totalDailyBudget}`);
-  _spendCache.set(cacheKey, { data: totalDailyBudget, ts: Date.now() });
-  return totalDailyBudget;
+        // Para as demais, busca TODOS os adsets da conta numa única chamada
+        if (semBudgetCampanha.size > 0) {
+          const adsetsRes = await graphApiFetch<{
+            data: Array<{ daily_budget?: string; status: string; campaign?: { id: string } }>;
+          }>(`/${id}/adsets`, { fields: "daily_budget,status,campaign", limit: "500" });
+          for (const a of adsetsRes.data || []) {
+            const cid = a.campaign?.id;
+            if (cid && semBudgetCampanha.has(cid) && a.status === "ACTIVE" && a.daily_budget && parseFloat(a.daily_budget) > 0) {
+              totalDailyBudget += parseFloat(a.daily_budget) / 100;
+            }
+          }
+        }
+      })
+    );
+
+    _spendCache.set(cacheKey, { data: totalDailyBudget, ts: Date.now() });
+    persistResult(cacheKey, totalDailyBudget);
+    return totalDailyBudget;
+  } catch (e) {
+    // Estouro de limite: usa o último orçamento válido (evita projeção = participantes)
+    const fb = loadPersisted<number>(cacheKey);
+    if (fb != null) {
+      console.warn("[Meta API] fetchCampaignDailyBudget via fallback (última leitura salva)");
+      return fb;
+    }
+    throw e;
+  }
 }
