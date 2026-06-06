@@ -158,6 +158,21 @@ function buildTimeRange(dateRange: string): { since: string; until: string } {
   }
 }
 
+// A API do Meta limita insights a ~37 meses. Garante que o "since" não seja
+// mais antigo que isso (ex.: período "vitalício", que começa em 2020/2000),
+// senão a chamada falha e o investimento volta zerado.
+const META_MAX_MONTHS = 37;
+function clampTimeRange(range: { since: string; until: string }): { since: string; until: string } {
+  const until = new Date(range.until + "T00:00:00Z");
+  const minSince = new Date(until);
+  minSince.setUTCMonth(minSince.getUTCMonth() - META_MAX_MONTHS);
+  const since = new Date(range.since + "T00:00:00Z");
+  if (since < minSince) {
+    return { since: minSince.toISOString().split("T")[0], until: range.until };
+  }
+  return range;
+}
+
 // Cache for spend results (10 min TTL — matches dashboard refresh)
 const _spendCache = new Map<string, { data: any; ts: number }>();
 const SPEND_CACHE_TTL = 10 * 60 * 1000;
@@ -176,9 +191,9 @@ export async function fetchAdSpend(
   const cacheKey = "spend_" + spendCacheKey(accountIds, dateRange, startDate, endDate, campaignSlug);
   const cached = _spendCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < SPEND_CACHE_TTL) return cached.data;
-  const timeRange = startDate && endDate
+  const timeRange = clampTimeRange(startDate && endDate
     ? { since: startDate.toISOString().split("T")[0], until: endDate.toISOString().split("T")[0] }
-    : buildTimeRange(dateRange);
+    : buildTimeRange(dateRange));
   const timeRangeParam = JSON.stringify(timeRange);
 
   const results = await Promise.all(
@@ -235,9 +250,9 @@ export async function fetchDailySpendBreakdown(
   const cacheKey = "daily_" + spendCacheKey(accountIds, dateRange, startDate, endDate, campaignSlug);
   const cached = _spendCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < SPEND_CACHE_TTL) return cached.data;
-  const timeRange = startDate && endDate
+  const timeRange = clampTimeRange(startDate && endDate
     ? { since: startDate.toISOString().split("T")[0], until: endDate.toISOString().split("T")[0] }
-    : buildTimeRange(dateRange);
+    : buildTimeRange(dateRange));
   const timeRangeParam = JSON.stringify(timeRange);
 
   const dailyMap = new Map<string, number>();
