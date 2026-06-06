@@ -181,9 +181,21 @@ function clampTimeRange(range: { since: string; until: string }): { since: strin
 function slugVariants(slug?: string): string[] {
   return (slug || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 }
-function campaignMatchesSlug(name: string, variants: string[]): boolean {
+
+// Termos de campanhas que NÃO são de venda de ingresso (lead-gen). Aplicado apenas
+// quando strictSales=true (dashboards de evento WS / Resumo City), nunca no Inside Sales.
+const SALES_EXCLUDE_TERMS = ["lead", "meteorico"];
+function stripAccentsLower(s: string): string {
+  return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+function campaignMatchesSlug(name: string, variants: string[], strictSales = false): boolean {
   const n = (name || "").toLowerCase();
-  return variants.some((v) => n.includes(v));
+  if (!variants.some((v) => n.includes(v))) return false;
+  if (strictSales) {
+    const na = stripAccentsLower(name);
+    if (SALES_EXCLUDE_TERMS.some((t) => na.includes(t))) return false;
+  }
+  return true;
 }
 
 // Cache for spend results (10 min TTL — matches dashboard refresh)
@@ -199,9 +211,10 @@ export async function fetchAdSpend(
   dateRange: string,
   startDate?: Date,
   endDate?: Date,
-  campaignSlug?: string
+  campaignSlug?: string,
+  strictSales = false
 ): Promise<AdSpendResult[]> {
-  const cacheKey = "spend_" + spendCacheKey(accountIds, dateRange, startDate, endDate, campaignSlug);
+  const cacheKey = "spend_" + spendCacheKey(accountIds, dateRange, startDate, endDate, campaignSlug) + "_" + strictSales;
   const cached = _spendCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < SPEND_CACHE_TTL) return cached.data;
   const timeRange = clampTimeRange(startDate && endDate
@@ -219,7 +232,7 @@ export async function fetchAdSpend(
             `/${id}/campaigns`,
             { fields: "id,name", limit: "500" }
           );
-          const campaigns = (campaignsRes.data || []).filter((c) => campaignMatchesSlug(c.name, variants));
+          const campaigns = (campaignsRes.data || []).filter((c) => campaignMatchesSlug(c.name, variants, strictSales));
           if (campaigns.length === 0) return { accountId: id, accountName: "", spend: 0 };
 
           let totalSpend = 0;
@@ -259,9 +272,10 @@ export async function fetchDailySpendBreakdown(
   dateRange: string,
   startDate?: Date,
   endDate?: Date,
-  campaignSlug?: string
+  campaignSlug?: string,
+  strictSales = false
 ): Promise<Map<string, number>> {
-  const cacheKey = "daily_" + spendCacheKey(accountIds, dateRange, startDate, endDate, campaignSlug);
+  const cacheKey = "daily_" + spendCacheKey(accountIds, dateRange, startDate, endDate, campaignSlug) + "_" + strictSales;
   const cached = _spendCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < SPEND_CACHE_TTL) return cached.data;
   const timeRange = clampTimeRange(startDate && endDate
@@ -280,7 +294,7 @@ export async function fetchDailySpendBreakdown(
             `/${id}/campaigns`,
             { fields: "id,name", limit: "500" }
           );
-          const campaigns = (campaignsRes.data || []).filter((c) => campaignMatchesSlug(c.name, variants));
+          const campaigns = (campaignsRes.data || []).filter((c) => campaignMatchesSlug(c.name, variants, strictSales));
           await Promise.all(
             campaigns.map(async (c) => {
               try {
@@ -319,9 +333,10 @@ export async function fetchDailySpendBreakdown(
  *  Checks campaign-level daily_budget first, then falls back to adset-level budgets. */
 export async function fetchCampaignDailyBudget(
   accountIds: string[],
-  slug: string
+  slug: string,
+  strictSales = false
 ): Promise<number> {
-  const cacheKey = "budget_" + accountIds.sort().join(",") + "_" + slug;
+  const cacheKey = "budget_" + accountIds.sort().join(",") + "_" + slug + "_" + strictSales;
   const cached = _spendCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < SPEND_CACHE_TTL) return cached.data;
 
@@ -338,7 +353,7 @@ export async function fetchCampaignDailyBudget(
           limit: "500",
         });
 
-        const campaigns = (campaignsRes.data || []).filter((c) => campaignMatchesSlug(c.name, variants));
+        const campaigns = (campaignsRes.data || []).filter((c) => campaignMatchesSlug(c.name, variants, strictSales));
         for (const c of campaigns) {
           if (c.status !== "ACTIVE") continue;
 

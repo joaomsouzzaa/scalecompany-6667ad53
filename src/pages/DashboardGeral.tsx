@@ -128,12 +128,12 @@ const DashboardGeral = () => {
         await Promise.all(
           visibleCidades.map(async (cidade) => {
             try {
-              const results = await fetchAdSpend(accountIds, dateRange, startDate, endDate, cidade.slug);
+              const results = await fetchAdSpend(accountIds, dateRange, startDate, endDate, cidade.slug, true);
               const totalSpend = results.reduce((sum, r) => sum + r.spend, 0);
               spendMap.set(cidade.slug, totalSpend);
 
               // Projection
-              const dailyBudget = await fetchCampaignDailyBudget(accountIds, cidade.slug);
+              const dailyBudget = await fetchCampaignDailyBudget(accountIds, cidade.slug, true);
               const eventDate = new Date(cidade.data_evento);
               const today = new Date();
               const eventDateOnly = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());

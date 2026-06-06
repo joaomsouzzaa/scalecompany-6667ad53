@@ -170,8 +170,8 @@ const Index = () => {
 
       const slug = selectedCidade?.slug;
       const [results, dailyBreakdown] = await Promise.all([
-        fetchAdSpend(accountIds, filters.dateRange, filters.startDate, filters.endDate, slug),
-        fetchDailySpendBreakdown(accountIds, filters.dateRange, filters.startDate, filters.endDate, slug),
+        fetchAdSpend(accountIds, filters.dateRange, filters.startDate, filters.endDate, slug, true),
+        fetchDailySpendBreakdown(accountIds, filters.dateRange, filters.startDate, filters.endDate, slug, true),
       ]);
       const totalSpend = results.reduce((sum, r) => sum + r.spend, 0);
       setMetaInvestimento(totalSpend);
@@ -237,7 +237,7 @@ const Index = () => {
           return;
         }
 
-        const dailyBudget = await fetchCampaignDailyBudget(accountIds, selectedCidade.slug);
+        const dailyBudget = await fetchCampaignDailyBudget(accountIds, selectedCidade.slug, true);
 
         const eventDate = new Date(selectedCidade.data_evento);
         const today = new Date();
