@@ -14,6 +14,7 @@ import {
   CreditCard,
   MapPin,
   Package,
+  ChevronDown,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -53,6 +54,9 @@ export function AppSidebar() {
     if (saved) return saved === "dark";
     return document.documentElement.classList.contains("dark");
   });
+
+  // Seção "Configurações" começa minimizada; abre apenas ao clicar.
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
@@ -153,9 +157,18 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-3 space-y-1">
-        <SidebarGroupLabel className="text-xs uppercase tracking-wider text-sidebar-foreground/50 px-3 mb-1">
-          Configurações
-        </SidebarGroupLabel>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen((o) => !o)}
+          aria-expanded={settingsOpen}
+          className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-xs uppercase tracking-wider text-sidebar-foreground/50 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground transition-colors"
+        >
+          <span>Configurações</span>
+          <ChevronDown
+            className={`h-3.5 w-3.5 transition-transform ${settingsOpen ? "" : "-rotate-90"}`}
+          />
+        </button>
+        {settingsOpen && (
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Integrações">
@@ -236,6 +249,7 @@ export function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        )}
 
         <SidebarSeparator />
 
