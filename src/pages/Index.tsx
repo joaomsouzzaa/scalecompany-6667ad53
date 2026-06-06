@@ -76,6 +76,58 @@ const Index = () => {
 
   const selectedCidade = cidades.find((c) => c.slug === filters.city);
 
+  // TV Mode: fullscreen + rotate through active cities every 20s
+  const [tvMode, setTvMode] = useState(false);
+  const hiddenCidades = getHiddenCidades();
+  const activeCidades = cidades.filter((c) => {
+    if (hiddenCidades.includes(c.id)) return false;
+    const eventDate = new Date(c.data_evento);
+    const today = new Date();
+    eventDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    return eventDate >= today;
+  });
+
+  const toggleTvMode = async () => {
+    if (!tvMode) {
+      try {
+        await document.documentElement.requestFullscreen();
+      } catch {}
+      setTvMode(true);
+    } else {
+      if (document.fullscreenElement) {
+        try { await document.exitFullscreen(); } catch {}
+      }
+      setTvMode(false);
+    }
+  };
+
+  useEffect(() => {
+    const onFsChange = () => {
+      if (!document.fullscreenElement) setTvMode(false);
+    };
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  useEffect(() => {
+    if (!tvMode || activeCidades.length === 0) return;
+    // Initialize with first active city if current isn't in list
+    const currentIdx = activeCidades.findIndex((c) => c.slug === filters.city);
+    if (currentIdx === -1) {
+      handleFiltersChange({ ...filters, city: activeCidades[0].slug });
+      return;
+    }
+    const interval = setInterval(() => {
+      const idx = activeCidades.findIndex((c) => c.slug === filters.city);
+      const nextIdx = (idx + 1) % activeCidades.length;
+      handleFiltersChange({ ...filters, city: activeCidades[nextIdx].slug });
+    }, 20000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tvMode, filters.city, activeCidades.length]);
+
+
   const loadSpend = useCallback(async () => {
     if (!isMetaConnected) {
       setMetaInvestimento(null);
