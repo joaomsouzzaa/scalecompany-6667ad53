@@ -55,10 +55,13 @@ const CadastroCidades = () => {
   const [addOpen, setAddOpen] = useState(false);
   const [editingCidade, setEditingCidade] = useState<Cidade | null>(null);
   const [deletingCidade, setDeletingCidade] = useState<Cidade | null>(null);
-  const [form, setForm] = useState({ nome: "", data_evento: "" });
+  const [form, setForm] = useState({ nome: "", slug: "", data_evento: "" });
+  // Quando true, o slug foi editado manualmente e não é mais sugerido pelo nome
+  const [slugTouched, setSlugTouched] = useState(false);
 
   const openAdd = () => {
-    setForm({ nome: "", data_evento: "" });
+    setForm({ nome: "", slug: "", data_evento: "" });
+    setSlugTouched(false);
     setAddOpen(true);
   };
 
@@ -66,18 +69,30 @@ const CadastroCidades = () => {
     setEditingCidade(c);
     setForm({
       nome: c.nome,
+      slug: c.slug,
       data_evento: new Date(c.data_evento).toISOString().slice(0, 16),
     });
+    setSlugTouched(true);
+  };
+
+  // Atualiza o nome e sugere o slug automaticamente, a menos que já tenha sido editado
+  const handleNomeChange = (nome: string) => {
+    setForm((f) => ({ ...f, nome, slug: slugTouched ? f.slug : normalizeSlug(nome) }));
+  };
+
+  const handleSlugChange = (slug: string) => {
+    setSlugTouched(true);
+    setForm((f) => ({ ...f, slug }));
   };
 
   const handleAdd = async () => {
-    if (!form.nome || !form.data_evento) {
+    if (!form.nome || !form.slug || !form.data_evento) {
       toast.error("Preencha todos os campos");
       return;
     }
     const { error } = await supabase.from("cidades").insert({
       nome: form.nome,
-      slug: normalizeSlug(form.nome),
+      slug: normalizeSlug(form.slug),
       data_evento: new Date(form.data_evento).toISOString(),
     });
     if (error) {
@@ -90,12 +105,12 @@ const CadastroCidades = () => {
   };
 
   const handleEdit = async () => {
-    if (!editingCidade || !form.nome || !form.data_evento) return;
+    if (!editingCidade || !form.nome || !form.slug || !form.data_evento) return;
     const { error } = await supabase
       .from("cidades")
       .update({
         nome: form.nome,
-        slug: normalizeSlug(form.nome),
+        slug: normalizeSlug(form.slug),
         data_evento: new Date(form.data_evento).toISOString(),
       })
       .eq("id", editingCidade.id);
@@ -246,9 +261,20 @@ const CadastroCidades = () => {
               <Label>Nome da Cidade</Label>
               <Input
                 value={form.nome}
-                onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                onChange={(e) => handleNomeChange(e.target.value)}
                 placeholder="Ex: São Paulo"
               />
+            </div>
+            <div className="space-y-1">
+              <Label>Slug da Cidade</Label>
+              <Input
+                value={form.slug}
+                onChange={(e) => handleSlugChange(e.target.value)}
+                placeholder="Ex: sao-paulo"
+              />
+              <p className="text-xs text-muted-foreground">
+                Usada para filtrar campanhas no Meta Ads e casar as vendas. Sugerida pelo nome, mas editável.
+              </p>
             </div>
             <div className="space-y-1">
               <Label>Data do Evento</Label>
@@ -277,8 +303,19 @@ const CadastroCidades = () => {
               <Label>Nome da Cidade</Label>
               <Input
                 value={form.nome}
-                onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                onChange={(e) => handleNomeChange(e.target.value)}
               />
+            </div>
+            <div className="space-y-1">
+              <Label>Slug da Cidade</Label>
+              <Input
+                value={form.slug}
+                onChange={(e) => handleSlugChange(e.target.value)}
+                placeholder="Ex: sao-paulo"
+              />
+              <p className="text-xs text-muted-foreground">
+                Usada para filtrar campanhas no Meta Ads e casar as vendas.
+              </p>
             </div>
             <div className="space-y-1">
               <Label>Data do Evento</Label>
