@@ -255,12 +255,23 @@ const Index = () => {
         <main className="flex-1 overflow-auto">
           <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
             <SidebarTrigger />
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">Dashboard</h1>
+            <div className="flex-1">
+              <h1 className="text-xl font-bold tracking-tight">
+                Dashboard{tvMode && selectedCidade ? ` — ${selectedCidade.nome}` : ""}
+              </h1>
               <p className="text-sm text-muted-foreground">
-                Visão geral de métricas e performance
+                {tvMode ? `Modo TV — rotacionando ${activeCidades.length} cidades a cada 20s` : "Visão geral de métricas e performance"}
               </p>
             </div>
+            <Button
+              variant={tvMode ? "default" : "outline"}
+              size="sm"
+              onClick={toggleTvMode}
+              className="gap-2"
+            >
+              <Tv className="h-4 w-4" />
+              {tvMode ? "Sair do Modo TV" : "Modo TV"}
+            </Button>
           </header>
 
           <div className="p-6 space-y-6">
