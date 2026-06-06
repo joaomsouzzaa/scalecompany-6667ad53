@@ -384,10 +384,7 @@ const Index = () => {
               />
             </div>
 
-            {/* Payment Method Donut Chart */}
-            <PaymentMethodChart data={kpi.pagamentoPorMetodo} />
-
-            {/* Charts */}
+            {/* Charts: Investimento x Faturamento primeiro */}
             <div className={tvMode ? "tv-chart" : ""}>
             <SalesChart data={(() => {
               // Merge daily Meta spend into chart data
@@ -415,6 +412,9 @@ const Index = () => {
               return merged;
             })()} />
             </div>
+
+            {/* Método de Pagamento depois */}
+            <PaymentMethodChart data={kpi.pagamentoPorMetodo} />
           </div>
         </main>
       </div>
