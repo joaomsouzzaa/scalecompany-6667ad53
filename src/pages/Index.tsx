@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   DollarSign,
   TrendingUp,
@@ -110,22 +110,34 @@ const Index = () => {
     return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, []);
 
+  // Keep latest values in refs so the rotation timer isn't reset by re-renders
+  const activeCidadesRef = useRef(activeCidades);
+  const filtersRef = useRef(filters);
+  const handleFiltersChangeRef = useRef(handleFiltersChange);
+  useEffect(() => { activeCidadesRef.current = activeCidades; });
+  useEffect(() => { filtersRef.current = filters; });
+  useEffect(() => { handleFiltersChangeRef.current = handleFiltersChange; });
+
   useEffect(() => {
-    if (!tvMode || activeCidades.length === 0) return;
-    // Initialize with first active city if current isn't in list
-    const currentIdx = activeCidades.findIndex((c) => c.slug === filters.city);
-    if (currentIdx === -1) {
-      handleFiltersChange({ ...filters, city: activeCidades[0].slug });
-      return;
+    if (!tvMode) return;
+    const tick = () => {
+      const list = activeCidadesRef.current;
+      if (list.length === 0) return;
+      const currentSlug = filtersRef.current.city;
+      const idx = list.findIndex((c) => c.slug === currentSlug);
+      const nextIdx = idx === -1 ? 0 : (idx + 1) % list.length;
+      console.log(`[TV Mode] Rotating ${currentSlug} -> ${list[nextIdx].slug} (${list.length} active)`);
+      handleFiltersChangeRef.current({ ...filtersRef.current, city: list[nextIdx].slug });
+    };
+    // Switch immediately to the first active city on entering TV mode
+    const list = activeCidadesRef.current;
+    if (list.length > 0 && !list.some((c) => c.slug === filtersRef.current.city)) {
+      handleFiltersChangeRef.current({ ...filtersRef.current, city: list[0].slug });
     }
-    const interval = setInterval(() => {
-      const idx = activeCidades.findIndex((c) => c.slug === filters.city);
-      const nextIdx = (idx + 1) % activeCidades.length;
-      handleFiltersChange({ ...filters, city: activeCidades[nextIdx].slug });
-    }, 20000);
+    const interval = setInterval(tick, 20000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tvMode, filters.city, activeCidades.length]);
+  }, [tvMode]);
+
 
 
   const loadSpend = useCallback(async () => {
