@@ -108,6 +108,9 @@ export async function exchangeForLongLivedToken(shortLivedToken: string): Promis
 let _adAccountsCache: { data: AdAccount[]; ts: number } | null = null;
 const AD_ACCOUNTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+// Apenas a conta Scale Company é usada no dashboard (as demais não são necessárias)
+const ALLOWED_ACCOUNT_IDS = ["1207875286360718"];
+
 export async function fetchAdAccounts(skipCache = false): Promise<AdAccount[]> {
   if (!skipCache && _adAccountsCache && Date.now() - _adAccountsCache.ts < AD_ACCOUNTS_CACHE_TTL) {
     return _adAccountsCache.data;
@@ -116,7 +119,7 @@ export async function fetchAdAccounts(skipCache = false): Promise<AdAccount[]> {
     fields: "name,account_id,currency",
     limit: "100",
   });
-  const accounts = res.data || [];
+  const accounts = (res.data || []).filter((a) => ALLOWED_ACCOUNT_IDS.includes(a.account_id));
   _adAccountsCache = { data: accounts, ts: Date.now() };
   return accounts;
 }
