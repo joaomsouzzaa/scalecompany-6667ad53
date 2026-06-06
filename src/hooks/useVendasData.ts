@@ -96,6 +96,11 @@ function isVip(row: VendaRow): boolean {
   return nome.includes("vip");
 }
 
+// Upgrade (orderbump): conta apenas como VIP, não como participante/venda
+function isUpgrade(row: VendaRow): boolean {
+  return (row.produto || "").toLowerCase().includes("upgrade");
+}
+
 function isDuplo(row: VendaRow): boolean {
   const tipo = (row.tipo_ingresso || "").toLowerCase();
   const nome = (row.produto || "").toLowerCase();
@@ -123,9 +128,18 @@ function calcularKpis(vendas: VendaRow[]) {
     const metodo = v.metodo_pagamento || "outro";
     pagamentoPorMetodo[metodo] = (pagamentoPorMetodo[metodo] || 0) + valor;
 
+    const qty = v.quantidade || 1;
+
+    // Upgrade é orderbump: soma só em Total de VIPs e Bilheteria VIP.
+    // Não conta como participante, venda nem entra no CAC.
+    if (isUpgrade(v)) {
+      totalVips += qty;
+      bilheteriaVip += valor;
+      continue;
+    }
+
     const duplo = isDuplo(v);
     const vip = isVip(v);
-    const qty = v.quantidade || 1;
     const isManual = v.plataforma === "manual";
 
     if (duplo) {

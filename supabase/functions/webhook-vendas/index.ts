@@ -168,6 +168,10 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Upgrade (orderbump): a quantidade deve ser a mesma da compra principal
+    // (Workshop) do mesmo comprador/cidade — o webhook costuma mandar 1.
+    await resolveUpgradeQuantity(supabase, venda);
+
     // Otherwise insert as new record
     const { error } = await supabase.from("vendas").insert(venda);
 
@@ -178,6 +182,10 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Se chegou a compra principal, atualiza upgrades já existentes desse
+    // comprador/cidade para refletirem a quantidade correta (ordem inversa).
+    await syncUpgradesForCompra(supabase, venda);
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -194,6 +202,60 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+function isUpgradeProduto(nome: unknown): boolean {
+  return typeof nome === "string" && nome.toLowerCase().includes("upgrade");
+}
+
+// Se a venda for um Upgrade (orderbump), copia a quantidade da compra principal
+// (Workshop/ingresso) do mesmo comprador e cidade. O webhook do upgrade costuma
+// vir com quantidade 1, mas ela deve refletir a compra principal.
+async function resolveUpgradeQuantity(supabase: any, venda: Record<string, unknown>) {
+  if (!isUpgradeProduto(venda.produto)) return;
+  const email = venda.email_comprador as string | null;
+  const cidade = venda.cidade as string | null;
+  if (!email) return;
+  try {
+    let query = supabase
+      .from("vendas")
+      .select("quantidade")
+      .eq("email_comprador", email)
+      .eq("status", "aprovada")
+      .not("produto", "ilike", "%upgrade%")
+      .order("quantidade", { ascending: false })
+      .limit(1);
+    if (cidade) query = query.eq("cidade", cidade);
+    const { data } = await query.maybeSingle();
+    if (data && data.quantidade != null) {
+      venda.quantidade = data.quantidade;
+    }
+  } catch (_) {
+    // silencioso: na pior hipótese mantém a quantidade do webhook
+  }
+}
+
+// Quando chega a compra principal (não-upgrade), atualiza upgrades já existentes
+// do mesmo comprador/cidade para terem a mesma quantidade (caso o upgrade tenha
+// chegado antes da compra principal).
+async function syncUpgradesForCompra(supabase: any, venda: Record<string, unknown>) {
+  if (isUpgradeProduto(venda.produto)) return;
+  const email = venda.email_comprador as string | null;
+  const cidade = venda.cidade as string | null;
+  const qty = venda.quantidade;
+  if (!email || qty == null) return;
+  try {
+    let query = supabase
+      .from("vendas")
+      .update({ quantidade: qty })
+      .eq("email_comprador", email)
+      .eq("status", "aprovada")
+      .ilike("produto", "%upgrade%");
+    if (cidade) query = query.eq("cidade", cidade);
+    await query;
+  } catch (_) {
+    // silencioso
+  }
+}
 
 function mapStatus(status: string): string {
   const s = status.toLowerCase().replace(/_/g, " ");
