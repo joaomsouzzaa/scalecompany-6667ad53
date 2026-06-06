@@ -38,15 +38,6 @@ import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
-function normalizeSlug(nome: string): string {
-  return nome
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "");
-}
-
 const CadastroCidades = () => {
   const { data: cidades = [], isLoading } = useCidades();
   const queryClient = useQueryClient();
@@ -56,12 +47,9 @@ const CadastroCidades = () => {
   const [editingCidade, setEditingCidade] = useState<Cidade | null>(null);
   const [deletingCidade, setDeletingCidade] = useState<Cidade | null>(null);
   const [form, setForm] = useState({ nome: "", slug: "", data_evento: "" });
-  // Quando true, o slug foi editado manualmente e não é mais sugerido pelo nome
-  const [slugTouched, setSlugTouched] = useState(false);
 
   const openAdd = () => {
     setForm({ nome: "", slug: "", data_evento: "" });
-    setSlugTouched(false);
     setAddOpen(true);
   };
 
@@ -72,16 +60,14 @@ const CadastroCidades = () => {
       slug: c.slug,
       data_evento: new Date(c.data_evento).toISOString().slice(0, 16),
     });
-    setSlugTouched(true);
   };
 
-  // Atualiza o nome e sugere o slug automaticamente, a menos que já tenha sido editado
+  // Slug é preenchido manualmente (deve casar com o nome da campanha no Meta)
   const handleNomeChange = (nome: string) => {
-    setForm((f) => ({ ...f, nome, slug: slugTouched ? f.slug : normalizeSlug(nome) }));
+    setForm((f) => ({ ...f, nome }));
   };
 
   const handleSlugChange = (slug: string) => {
-    setSlugTouched(true);
     setForm((f) => ({ ...f, slug }));
   };
 
@@ -92,7 +78,7 @@ const CadastroCidades = () => {
     }
     const { error } = await supabase.from("cidades").insert({
       nome: form.nome,
-      slug: normalizeSlug(form.slug),
+      slug: form.slug.trim(),
       data_evento: new Date(form.data_evento).toISOString(),
     });
     if (error) {
@@ -110,7 +96,7 @@ const CadastroCidades = () => {
       .from("cidades")
       .update({
         nome: form.nome,
-        slug: normalizeSlug(form.slug),
+        slug: form.slug.trim(),
         data_evento: new Date(form.data_evento).toISOString(),
       })
       .eq("id", editingCidade.id);
@@ -270,10 +256,10 @@ const CadastroCidades = () => {
               <Input
                 value={form.slug}
                 onChange={(e) => handleSlugChange(e.target.value)}
-                placeholder="Ex: sao-paulo"
+                placeholder="Ex: Belém"
               />
               <p className="text-xs text-muted-foreground">
-                Usada para filtrar campanhas no Meta Ads e casar as vendas. Sugerida pelo nome, mas editável.
+                Deve bater com o trecho da cidade no nome da campanha do Meta (com acento e maiúscula, ex.: <strong>Belém</strong>). Também casa as vendas pela cidade.
               </p>
             </div>
             <div className="space-y-1">
@@ -311,10 +297,10 @@ const CadastroCidades = () => {
               <Input
                 value={form.slug}
                 onChange={(e) => handleSlugChange(e.target.value)}
-                placeholder="Ex: sao-paulo"
+                placeholder="Ex: Belém"
               />
               <p className="text-xs text-muted-foreground">
-                Usada para filtrar campanhas no Meta Ads e casar as vendas.
+                Deve bater com o trecho da cidade no nome da campanha do Meta (com acento e maiúscula, ex.: <strong>Belém</strong>). Também casa as vendas pela cidade.
               </p>
             </div>
             <div className="space-y-1">
