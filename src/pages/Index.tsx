@@ -252,7 +252,7 @@ const Index = () => {
       
       <div className="min-h-screen flex w-full">
         <AppSidebar />
-        <main className="flex-1 overflow-auto">
+        <main className={`flex-1 overflow-auto ${tvMode ? "tv-mode" : ""}`}>
           <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
             <SidebarTrigger />
             <div className="flex-1">
