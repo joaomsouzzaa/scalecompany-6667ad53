@@ -260,7 +260,7 @@ const Index = () => {
   }, [selectedCidade, isMetaConnected, filters.adAccount, kpi.participantes, cacParticipanteDisplay]);
 
   return (
-    <SidebarProvider>
+    <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
       
       <div className="min-h-screen flex w-full">
         <AppSidebar />
