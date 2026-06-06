@@ -78,6 +78,13 @@ const Index = () => {
 
   // TV Mode: fullscreen + rotate through active cities every 20s
   const [tvMode, setTvMode] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Collapse sidebar automatically when entering TV mode
+  useEffect(() => {
+    if (tvMode) setSidebarOpen(false);
+  }, [tvMode]);
+
   const hiddenCidades = getHiddenCidades();
   const activeCidades = cidades.filter((c) => {
     if (hiddenCidades.includes(c.id)) return false;
@@ -260,7 +267,7 @@ const Index = () => {
   }, [selectedCidade, isMetaConnected, filters.adAccount, kpi.participantes, cacParticipanteDisplay]);
 
   return (
-    <SidebarProvider>
+    <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
       
       <div className="min-h-screen flex w-full">
         <AppSidebar />
