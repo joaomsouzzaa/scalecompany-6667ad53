@@ -382,6 +382,7 @@ const Index = () => {
             <PaymentMethodChart data={kpi.pagamentoPorMetodo} />
 
             {/* Charts */}
+            <div className={tvMode ? "tv-chart" : ""}>
             <SalesChart data={(() => {
               // Merge daily Meta spend into chart data
               const merged = kpi.chartData.map((d) => {
