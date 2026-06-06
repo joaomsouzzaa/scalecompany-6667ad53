@@ -163,12 +163,14 @@ const DashboardGeral = () => {
     const result = new Map<string, CityKpis>();
 
     for (const cidade of visibleCidades) {
-      // Filter vendas matching this city (same logic as buscar_vendas)
+      // Filter vendas matching this city (same logic as buscar_vendas).
+      // Suporta m\u00faltiplos slugs separados por v\u00edrgula (ex.: "portoalegre, POA").
+      const norm = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s-]/g, "");
+      const slugParts = cidade.slug.split(",").map((p) => norm(p)).filter(Boolean);
       const cityVendas = allVendas.filter((v) => {
-        const vendaCidade = (v.cidade || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "");
-        const vendaProduto = (v.produto || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "");
-        const slug = cidade.slug.toLowerCase().replace(/-/g, "");
-        return vendaCidade.includes(slug) || vendaProduto.includes(slug);
+        const vendaCidade = norm(v.cidade || "");
+        const vendaProduto = norm(v.produto || "");
+        return slugParts.some((slug) => vendaCidade.includes(slug) || vendaProduto.includes(slug));
       });
 
       let participantes = 0;
