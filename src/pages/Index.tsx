@@ -408,6 +408,7 @@ const Index = () => {
               });
               return merged;
             })()} />
+            </div>
           </div>
         </main>
       </div>
