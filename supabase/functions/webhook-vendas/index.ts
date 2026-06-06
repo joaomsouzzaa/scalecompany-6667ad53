@@ -218,13 +218,15 @@ function detectTipoIngresso(productName: string): string | null {
   return null;
 }
 
-// Kiwify: nome do produto no formato "Workshop Scale | Cidade - UF | data"
+// Kiwify: extrai a cidade procurando o padrão "Cidade - UF" (UF = 2 letras
+// maiúsculas) em qualquer trecho do nome do produto, e remove prefixos
+// comerciais (Upgrade/Ingresso/Lote). Produtos sem "- UF" (ex.: "Trilha
+// Mentor", produtos online) retornam null.
 function extractCidadeFromKiwify(productName: string): string | null {
   if (!productName) return null;
-  const parts = productName.split("|");
-  if (parts.length >= 2) {
-    // parts[1] = "Cidade - UF" → pega o trecho antes do hífen
-    const cidade = parts[1].split(/[-–]/)[0].trim();
+  const match = productName.match(/([^|]+?)\s*-\s*[A-Z]{2}\b/);
+  if (match) {
+    const cidade = match[1].trim().replace(/^(Upgrade|Ingresso|Lote)\s+/i, "").trim();
     if (cidade) return cidade;
   }
   // fallback para o padrão dos outros produtos
