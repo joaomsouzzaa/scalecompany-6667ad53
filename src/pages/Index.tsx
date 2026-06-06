@@ -293,8 +293,8 @@ const Index = () => {
             </Button>
           </header>
 
-          <div className="p-6 space-y-6">
-            <DashboardFilters filters={filters} onFiltersChange={handleFiltersChange} />
+          <div className={tvMode ? "tv-content" : "p-6 space-y-6"}>
+            {!tvMode && <DashboardFilters filters={filters} onFiltersChange={handleFiltersChange} />}
 
             {/* Row 1 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
