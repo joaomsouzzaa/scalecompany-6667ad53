@@ -363,7 +363,7 @@ export default function Notificacoes() {
             </Button>
           </header>
 
-          <div className="p-6 space-y-6 max-w-5xl">
+          <div className="p-6 space-y-6">
             {/* Conexão WhatsApp */}
             <Card>
               <CardHeader>
