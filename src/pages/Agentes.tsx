@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,8 +18,12 @@ import { Sparkles, Plus, Pencil, Trash2, Bot, Settings, Eye, EyeOff } from "luci
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import ReactFlow, {
+  Background, Controls, Handle, Position, applyNodeChanges,
+  type Node, type Edge, type NodeChange, type Connection,
+} from "reactflow";
+import "reactflow/dist/style.css";
 
-// Providers de IA e seus modelos. Ajuste/adicione conforme integrar novos.
 const PROVIDERS: Record<string, { label: string; models: string[] }> = {
   anthropic: { label: "Anthropic", models: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-3-5-sonnet-20240620"] },
   openai: { label: "OpenAI", models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1-mini"] },
@@ -35,6 +39,9 @@ type Agente = {
   modelo: string | null;
   system_prompt: string | null;
   ativo: boolean;
+  parent_id: string | null;
+  pos_x: number | null;
+  pos_y: number | null;
 };
 
 const emptyForm = {
@@ -47,12 +54,45 @@ function slugify(s: string) {
   return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+// ---- Nó customizado (card do agente) no canvas ----
+function AgenteNode({ data }: any) {
+  const a: Agente = data.agente;
+  return (
+    <div className="w-64 rounded-xl border border-border bg-card shadow-sm">
+      <Handle type="target" position={Position.Top} className="!bg-primary !w-2.5 !h-2.5" />
+      <div className="p-4 space-y-3">
+        <div className="flex items-start justify-between">
+          <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Bot className="h-5 w-5 text-primary" />
+          </div>
+          <Badge variant={a.ativo ? "default" : "secondary"}>{a.ativo ? "ATIVO" : "inativo"}</Badge>
+        </div>
+        <div>
+          <p className="font-semibold leading-tight">{a.nome}</p>
+          {a.descricao && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{a.descricao}</p>}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <Badge variant="secondary" className="text-[10px]">{PROVIDERS[a.provider]?.label || a.provider}</Badge>
+          {a.modelo && <Badge variant="outline" className="text-[10px]">{a.modelo}</Badge>}
+        </div>
+        <div className="flex items-center gap-1 border-t border-border pt-2 nodrag">
+          <Switch checked={a.ativo} onCheckedChange={() => data.onToggle(a)} className="mr-auto" />
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => data.onEdit(a)} title="Editar"><Pencil className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => data.onDelete(a)} title="Excluir"><Trash2 className="h-4 w-4" /></Button>
+        </div>
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!bg-primary !w-2.5 !h-2.5" />
+    </div>
+  );
+}
+const nodeTypes = { agente: AgenteNode };
+
 export default function Agentes() {
   const queryClient = useQueryClient();
   const { data: agentes = [] } = useQuery({
     queryKey: ["agentes"],
     queryFn: async () => {
-      const { data, error } = await (supabase as any).from("agentes").select("*").order("created_at", { ascending: false });
+      const { data, error } = await (supabase as any).from("agentes").select("*").order("created_at", { ascending: true });
       if (error) throw error;
       return (data || []) as Agente[];
     },
@@ -64,41 +104,8 @@ export default function Agentes() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [deleting, setDeleting] = useState<Agente | null>(null);
 
-  // ---- Configuração das API keys dos providers (multi-tenant, no banco) ----
-  const [configOpen, setConfigOpen] = useState(false);
-  const [aiKeys, setAiKeys] = useState<Record<string, string>>({ anthropic: "", openai: "", google: "" });
-  const [savedProviders, setSavedProviders] = useState<Set<string>>(new Set());
-  const [showKey, setShowKey] = useState<Record<string, boolean>>({});
-  const [savingKeys, setSavingKeys] = useState(false);
-
-  const carregarProvidersSalvos = async () => {
-    const { data } = await (supabase as any).from("ai_config").select("provider");
-    setSavedProviders(new Set((data || []).map((r: any) => r.provider)));
-  };
-  useEffect(() => { carregarProvidersSalvos(); }, []);
-
-  const salvarKeys = async () => {
-    setSavingKeys(true);
-    try {
-      for (const [provider, key] of Object.entries(aiKeys)) {
-        if (!key.trim()) continue; // só grava o que foi preenchido
-        const { data: existing } = await (supabase as any).from("ai_config").select("provider").eq("provider", provider).maybeSingle();
-        if (existing) await (supabase as any).from("ai_config").update({ api_key: key.trim() }).eq("provider", provider);
-        else await (supabase as any).from("ai_config").insert({ provider, api_key: key.trim() });
-      }
-      toast.success("Chaves salvas");
-      setAiKeys({ anthropic: "", openai: "", google: "" });
-      await carregarProvidersSalvos();
-      setConfigOpen(false);
-    } catch (e: any) {
-      toast.error(e?.message || "Erro ao salvar chaves");
-    } finally {
-      setSavingKeys(false);
-    }
-  };
-
   const abrirNovo = () => { setEditingId(null); setForm({ ...emptyForm }); setSlugTouched(false); setDialogOpen(true); };
-  const abrirEdicao = (a: Agente) => {
+  const abrirEdicao = useCallback((a: Agente) => {
     setEditingId(a.id);
     setForm({
       nome: a.nome, slug: a.slug || "", descricao: a.descricao || "",
@@ -107,7 +114,7 @@ export default function Agentes() {
     });
     setSlugTouched(true);
     setDialogOpen(true);
-  };
+  }, []);
 
   const onNome = (nome: string) => setForm((f) => ({ ...f, nome, slug: slugTouched ? f.slug : slugify(nome) }));
   const onProvider = (provider: string) => setForm((f) => ({ ...f, provider, modelo: PROVIDERS[provider]?.models[0] || "" }));
@@ -136,76 +143,120 @@ export default function Agentes() {
     toast.success("Agente excluído");
   };
 
-  const toggleAtivo = async (a: Agente) => {
+  const toggleAtivo = useCallback(async (a: Agente) => {
     await (supabase as any).from("agentes").update({ ativo: !a.ativo }).eq("id", a.id);
     queryClient.invalidateQueries({ queryKey: ["agentes"] });
+  }, [queryClient]);
+
+  // ---- Canvas (React Flow) ----
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+
+  useEffect(() => {
+    setNodes(agentes.map((a, i) => ({
+      id: a.id,
+      type: "agente",
+      position: { x: a.pos_x ?? (i % 4) * 300, y: a.pos_y ?? 40 + Math.floor(i / 4) * 260 },
+      data: { agente: a, onEdit: abrirEdicao, onDelete: setDeleting, onToggle: toggleAtivo },
+    })));
+    setEdges(agentes.filter((a) => a.parent_id).map((a) => ({
+      id: `${a.parent_id}-${a.id}`, source: a.parent_id as string, target: a.id, type: "smoothstep",
+    })));
+  }, [agentes, abrirEdicao, toggleAtivo]);
+
+  const onNodesChange = useCallback((changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
+  const onNodeDragStop = useCallback(async (_: any, node: Node) => {
+    await (supabase as any).from("agentes").update({ pos_x: Math.round(node.position.x), pos_y: Math.round(node.position.y) }).eq("id", node.id);
+  }, []);
+  const onConnect = useCallback(async (conn: Connection) => {
+    if (!conn.source || !conn.target || conn.source === conn.target) return;
+    await (supabase as any).from("agentes").update({ parent_id: conn.source }).eq("id", conn.target);
+    queryClient.invalidateQueries({ queryKey: ["agentes"] });
+  }, [queryClient]);
+  const onEdgesDelete = useCallback(async (eds: Edge[]) => {
+    for (const e of eds) await (supabase as any).from("agentes").update({ parent_id: null }).eq("id", e.target);
+    queryClient.invalidateQueries({ queryKey: ["agentes"] });
+  }, [queryClient]);
+
+  // ---- Configuração das API keys ----
+  const [configOpen, setConfigOpen] = useState(false);
+  const [aiKeys, setAiKeys] = useState<Record<string, string>>({ anthropic: "", openai: "", google: "" });
+  const [savedProviders, setSavedProviders] = useState<Set<string>>(new Set());
+  const [showKey, setShowKey] = useState<Record<string, boolean>>({});
+  const [savingKeys, setSavingKeys] = useState(false);
+
+  const carregarProvidersSalvos = async () => {
+    const { data } = await (supabase as any).from("ai_config").select("provider");
+    setSavedProviders(new Set((data || []).map((r: any) => r.provider)));
   };
+  useEffect(() => { carregarProvidersSalvos(); }, []);
+
+  const salvarKeys = async () => {
+    setSavingKeys(true);
+    try {
+      for (const [provider, key] of Object.entries(aiKeys)) {
+        if (!key.trim()) continue;
+        const { data: existing } = await (supabase as any).from("ai_config").select("provider").eq("provider", provider).maybeSingle();
+        if (existing) await (supabase as any).from("ai_config").update({ api_key: key.trim() }).eq("provider", provider);
+        else await (supabase as any).from("ai_config").insert({ provider, api_key: key.trim() });
+      }
+      toast.success("Chaves salvas");
+      setAiKeys({ anthropic: "", openai: "", google: "" });
+      await carregarProvidersSalvos();
+      setConfigOpen(false);
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao salvar chaves");
+    } finally {
+      setSavingKeys(false);
+    }
+  };
+
+  const total = agentes.length;
+  const ativos = agentes.filter((a) => a.ativo).length;
 
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
         <AppSidebar />
-        <main className="flex-1 overflow-auto">
-          <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
+        <main className="flex-1 flex flex-col h-screen overflow-hidden">
+          <header className="shrink-0 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
             <SidebarTrigger />
             <div className="flex-1">
               <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-primary" /> Agentes
               </h1>
-              <p className="text-sm text-muted-foreground">Agentes de IA e automações inteligentes</p>
+              <p className="text-sm text-muted-foreground">Arraste os cards e ligue os agentes para montar a hierarquia</p>
             </div>
-            <Button variant="outline" onClick={() => setConfigOpen(true)}>
-              <Settings className="mr-2 h-4 w-4" /> Configurar modelos
-            </Button>
+            <Button variant="outline" onClick={() => setConfigOpen(true)}><Settings className="mr-2 h-4 w-4" /> Configurar modelos</Button>
             <Button onClick={abrirNovo}><Plus className="mr-2 h-4 w-4" /> Novo agente</Button>
           </header>
 
-          <div className="p-6">
-            {agentes.length === 0 ? (
-              <Card className="border-dashed">
-                <CardContent className="py-12 text-center">
-                  <div className="mx-auto mb-4 h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                    <Sparkles className="h-6 w-6 text-primary" />
-                  </div>
-                  <h2 className="text-lg font-semibold">Nenhum agente configurado ainda</h2>
-                  <p className="text-sm text-muted-foreground max-w-md mx-auto mt-1">
-                    Crie seu primeiro agente de IA: dê um nome, escolha o modelo e defina o system prompt (personalidade/instruções).
-                  </p>
-                  <Button className="mt-4" onClick={abrirNovo}><Plus className="mr-2 h-4 w-4" /> Criar primeiro agente</Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {agentes.map((a) => (
-                  <Card key={a.id} className="flex flex-col">
-                    <CardContent className="p-4 flex flex-col gap-3 flex-1">
-                      <div className="flex items-start justify-between">
-                        <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <Bot className="h-5 w-5 text-primary" />
-                        </div>
-                        <Badge variant={a.ativo ? "default" : "secondary"}>{a.ativo ? "ATIVO" : "inativo"}</Badge>
-                      </div>
-                      <div>
-                        <p className="font-semibold leading-tight">{a.nome}</p>
-                        {a.descricao && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{a.descricao}</p>}
-                      </div>
-                      <div className="flex flex-wrap gap-1 mt-auto">
-                        <Badge variant="secondary" className="text-[10px]">{PROVIDERS[a.provider]?.label || a.provider}</Badge>
-                        {a.modelo && <Badge variant="outline" className="text-[10px]">{a.modelo}</Badge>}
-                      </div>
-                      <div className="flex items-center gap-1 border-t border-border pt-2">
-                        <Switch checked={a.ativo} onCheckedChange={() => toggleAtivo(a)} className="mr-auto" />
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => abrirEdicao(a)} title="Editar">
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleting(a)} title="Excluir">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+          {/* Stats */}
+          <div className="shrink-0 grid grid-cols-3 gap-4 px-6 py-4">
+            <Card><CardContent className="py-4"><p className="text-xs text-muted-foreground">Total de Agentes</p><p className="text-2xl font-bold">{total}</p></CardContent></Card>
+            <Card><CardContent className="py-4"><p className="text-xs text-muted-foreground">Agentes Ativos</p><p className="text-2xl font-bold text-success">{ativos}</p></CardContent></Card>
+            <Card><CardContent className="py-4"><p className="text-xs text-muted-foreground">Agentes Inativos</p><p className="text-2xl font-bold text-muted-foreground">{total - ativos}</p></CardContent></Card>
+          </div>
+
+          {/* Canvas */}
+          <div className="flex-1 mx-6 mb-6 rounded-xl border border-border overflow-hidden">
+            {total === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-8">
+                <div className="mb-4 h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center"><Sparkles className="h-6 w-6 text-primary" /></div>
+                <h2 className="text-lg font-semibold">Nenhum agente configurado ainda</h2>
+                <p className="text-sm text-muted-foreground max-w-md mt-1">Crie agentes, arraste-os pelo canvas e conecte-os (puxando da bolinha de baixo de um para a de cima de outro) para montar a hierarquia.</p>
+                <Button className="mt-4" onClick={abrirNovo}><Plus className="mr-2 h-4 w-4" /> Criar primeiro agente</Button>
               </div>
+            ) : (
+              <ReactFlow
+                nodes={nodes} edges={edges} nodeTypes={nodeTypes}
+                onNodesChange={onNodesChange} onNodeDragStop={onNodeDragStop}
+                onConnect={onConnect} onEdgesDelete={onEdgesDelete}
+                fitView proOptions={{ hideAttribution: true }}
+              >
+                <Background />
+                <Controls />
+              </ReactFlow>
             )}
           </div>
         </main>
@@ -219,49 +270,26 @@ export default function Agentes() {
             <DialogDescription>Configurações do agente de IA</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-1">
-              <Label>Nome</Label>
-              <Input value={form.nome} onChange={(e) => onNome(e.target.value)} placeholder="Ex: CEO" />
-            </div>
-            <div className="space-y-1">
-              <Label>Slug (identificador único)</Label>
-              <Input value={form.slug} onChange={(e) => { setSlugTouched(true); setForm({ ...form, slug: e.target.value }); }} placeholder="ceo" />
-            </div>
-            <div className="space-y-1">
-              <Label>Descrição</Label>
-              <Textarea rows={2} value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })}
-                placeholder="Ex: Assistente executivo que gerencia estratégia, metas, projetos e equipe" />
-            </div>
+            <div className="space-y-1"><Label>Nome</Label><Input value={form.nome} onChange={(e) => onNome(e.target.value)} placeholder="Ex: CEO" /></div>
+            <div className="space-y-1"><Label>Slug (identificador único)</Label><Input value={form.slug} onChange={(e) => { setSlugTouched(true); setForm({ ...form, slug: e.target.value }); }} placeholder="ceo" /></div>
+            <div className="space-y-1"><Label>Descrição</Label><Textarea rows={2} value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} placeholder="Ex: Assistente executivo que gerencia estratégia, metas, projetos e equipe" /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Provider</Label>
+              <div className="space-y-1"><Label>Provider</Label>
                 <Select value={form.provider} onValueChange={onProvider}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(PROVIDERS).map(([k, p]) => <SelectItem key={k} value={k}>{p.label}</SelectItem>)}
-                  </SelectContent>
+                  <SelectContent>{Object.entries(PROVIDERS).map(([k, p]) => <SelectItem key={k} value={k}>{p.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
-                <Label>Modelo</Label>
+              <div className="space-y-1"><Label>Modelo</Label>
                 <Select value={form.modelo} onValueChange={(v) => setForm({ ...form, modelo: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {(PROVIDERS[form.provider]?.models || []).map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                  </SelectContent>
+                  <SelectContent>{(PROVIDERS[form.provider]?.models || []).map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>
-            <div className="space-y-1">
-              <Label>System Prompt</Label>
-              <Textarea rows={6} value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
-                placeholder="Defina a personalidade e instruções do agente..." />
-            </div>
+            <div className="space-y-1"><Label>System Prompt</Label><Textarea rows={6} value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} placeholder="Defina a personalidade e instruções do agente..." /></div>
             <div className="flex items-center justify-between rounded-md border p-3">
-              <div>
-                <Label>Ativo</Label>
-                <p className="text-xs text-muted-foreground">Agentes inativos não participam das execuções.</p>
-              </div>
+              <div><Label>Ativo</Label><p className="text-xs text-muted-foreground">Agentes inativos não participam das execuções.</p></div>
               <Switch checked={form.ativo} onCheckedChange={(v) => setForm({ ...form, ativo: v })} />
             </div>
           </div>
@@ -272,40 +300,27 @@ export default function Agentes() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog de configuração das API keys */}
+      {/* Dialog config API keys */}
       <Dialog open={configOpen} onOpenChange={setConfigOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Configurar modelos (API keys)</DialogTitle>
-            <DialogDescription>
-              Cole a API key de cada provider que você usa. Por segurança, as chaves não são exibidas depois de salvas.
-            </DialogDescription>
+            <DialogDescription>Cole a API key de cada provider que você usa. Por segurança, as chaves não são exibidas depois de salvas.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {Object.entries(PROVIDERS).map(([prov, p]) => (
               <div key={prov} className="space-y-1">
-                <Label className="flex items-center gap-2">
-                  {p.label}
-                  {savedProviders.has(prov) && <Badge variant="secondary" className="text-[10px]">salvo</Badge>}
-                </Label>
+                <Label className="flex items-center gap-2">{p.label}{savedProviders.has(prov) && <Badge variant="secondary" className="text-[10px]">salvo</Badge>}</Label>
                 <div className="relative">
-                  <Input
-                    type={showKey[prov] ? "text" : "password"}
-                    className="pr-9"
+                  <Input type={showKey[prov] ? "text" : "password"} className="pr-9"
                     placeholder={savedProviders.has(prov) ? "•••••••• (salvo — deixe em branco p/ manter)" : "cole a API key"}
-                    value={aiKeys[prov]}
-                    onChange={(e) => setAiKeys({ ...aiKeys, [prov]: e.target.value })}
-                  />
-                  <button type="button" onClick={() => setShowKey({ ...showKey, [prov]: !showKey[prov] })}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    value={aiKeys[prov]} onChange={(e) => setAiKeys({ ...aiKeys, [prov]: e.target.value })} />
+                  <button type="button" onClick={() => setShowKey({ ...showKey, [prov]: !showKey[prov] })} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showKey[prov] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
             ))}
-            <p className="text-[11px] text-muted-foreground">
-              As chaves ficam no servidor (usadas pelos agentes para chamar os modelos). Quando entrar o login multi-usuário, serão isoladas por conta.
-            </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfigOpen(false)}>Cancelar</Button>
