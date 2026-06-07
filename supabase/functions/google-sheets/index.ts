@@ -113,10 +113,19 @@ Deno.serve(async (req) => {
 
     if (action === "list_spreadsheets") {
       const token = await getAccessToken(supabase);
-      const j = await gapi(token, "https://www.googleapis.com/drive/v3/files?q=" +
-        encodeURIComponent("mimeType='application/vnd.google-apps.spreadsheet' and trashed=false") +
-        "&orderBy=modifiedTime desc&pageSize=100&fields=files(id,name)");
-      return json({ files: j.files || [] });
+      // Pagina por TODAS as planilhas (não só as 100 recentes) p/ aparecer renomeadas/antigas.
+      const files: any[] = [];
+      let pageToken = "";
+      do {
+        const u = "https://www.googleapis.com/drive/v3/files?q=" +
+          encodeURIComponent("mimeType='application/vnd.google-apps.spreadsheet' and trashed=false") +
+          "&orderBy=modifiedTime desc&pageSize=1000&fields=nextPageToken,files(id,name)" +
+          (pageToken ? `&pageToken=${pageToken}` : "");
+        const j = await gapi(token, u);
+        files.push(...(j.files || []));
+        pageToken = j.nextPageToken || "";
+      } while (pageToken && files.length < 5000);
+      return json({ files });
     }
 
     if (action === "list_tabs") {

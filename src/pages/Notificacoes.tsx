@@ -690,7 +690,11 @@ export default function Notificacoes() {
               {form.sheets_ativo && (
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1"><Label className="text-xs">Planilha</Label>
+                    <div className="space-y-1"><Label className="text-xs flex items-center gap-2">Planilha
+                      <button type="button" onClick={() => carregarPlanilhas()} className="text-muted-foreground hover:text-foreground" title="Atualizar lista">
+                        <RefreshCw className={`h-3 w-3 ${loadingSheets ? "animate-spin" : ""}`} />
+                      </button>
+                    </Label>
                       <Popover open={sheetsPopover} onOpenChange={setSheetsPopover}>
                         <PopoverTrigger asChild>
                           <Button variant="outline" className="w-full justify-between font-normal">
@@ -719,7 +723,11 @@ export default function Notificacoes() {
                         </PopoverContent>
                       </Popover>
                     </div>
-                    <div className="space-y-1"><Label className="text-xs">Aba</Label>
+                    <div className="space-y-1"><Label className="text-xs flex items-center gap-2">Aba
+                      <button type="button" disabled={!form.sheets_spreadsheet_id} onClick={() => carregarAbas(form.sheets_spreadsheet_id)} className="text-muted-foreground hover:text-foreground disabled:opacity-30" title="Atualizar abas">
+                        <RefreshCw className="h-3 w-3" />
+                      </button>
+                    </Label>
                       <Select value={form.sheets_aba || undefined} disabled={!form.sheets_spreadsheet_id}
                         onValueChange={(v) => { setForm({ ...form, sheets_aba: v }); carregarCabecalhos(form.sheets_spreadsheet_id, v); }}>
                         <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
