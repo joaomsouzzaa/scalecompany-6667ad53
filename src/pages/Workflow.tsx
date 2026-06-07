@@ -93,6 +93,10 @@ export default function Workflow() {
   const gerarArte = async (tipo: "imagem" | "video") => {
     if (!editing) { toast.error("Salve a tarefa antes de gerar a arte"); return; }
     setGerando(tipo);
+    // Placeholder otimista: mostra o "gerando…" na galeria já no clique.
+    const tempId = `temp-${Date.now()}`;
+    queryClient.setQueryData(["anexos", editing.id], (old: Anexo[] = []) =>
+      [{ id: tempId, tipo, url: null, status: "gerando", created_at: new Date().toISOString() } as Anexo, ...old]);
     const { data, error } = await (supabase as any).functions.invoke("gerar-arte-higgsfield", {
       body: { tarefa_id: editing.id, tipo, provider: tipo === "video" ? "higgsfield" : provider },
     });
