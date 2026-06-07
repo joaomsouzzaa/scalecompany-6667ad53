@@ -161,10 +161,12 @@ async function resumoCidade(supabase: any, cidadeSlug: string | null) {
   }
 
   let investimento = "-", cac = "-", projecao = "-", projecao_investimento = "-";
+  let spendNum = 0;
   const meta = (await supabase.from("meta_config").select("*").maybeSingle()).data;
   if (meta?.access_token && meta?.account_id && cidadeSlug) {
     try {
       const spend = await metaSpend(meta, cidadeSlug);
+      spendNum = spend;
       investimento = fmtBRL(spend);
       const cacNum = pagantes > 0 && spend > 0 ? spend / pagantes : 0;
       if (cacNum > 0) cac = fmtBRL(cacNum);
@@ -187,6 +189,28 @@ async function resumoCidade(supabase: any, cidadeSlug: string | null) {
     participantes, vips, convidados,
     bilheteria: fmtBRL(bilheteria),
     cac, projecao, investimento, projecao_investimento,
+    _bilheteriaNum: bilheteria, _investimentoNum: spendNum,
+  };
+}
+
+// Resumo consolidado de todas as cidades ativas (gatilho resumo_geral).
+async function resumoGeral(supabase: any): Promise<Record<string, string | number>> {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const { data: cids } = await supabase.from("cidades").select("slug,data_evento");
+  const ativas = (cids || []).filter((c: any) => new Date(c.data_evento) >= hoje);
+  let participantes = 0, bilheteria = 0, investimento = 0;
+  for (const c of ativas) {
+    const r = await resumoCidade(supabase, c.slug);
+    participantes += Number(r.participantes) || 0;
+    bilheteria += Number(r._bilheteriaNum) || 0;
+    investimento += Number(r._investimentoNum) || 0;
+  }
+  return {
+    total_cidades: ativas.length,
+    participantes_total: participantes,
+    bilheteria_total: fmtBRL(bilheteria),
+    investimento_total: fmtBRL(investimento),
+    data: new Date().toLocaleDateString("pt-BR"),
   };
 }
 
@@ -207,7 +231,7 @@ async function buildVarsList(supabase: any, n: any): Promise<Record<string, stri
     return [varsDaVenda({ nome_comprador: "Fulano (teste)", produto: "Workshop Scale | Belém - PA", cidade: "Belém", valor: 247, tipo_ingresso: "individual", quantidade: 1, metodo_pagamento: "pix", data_venda: new Date().toISOString() })];
   }
   if (n.gatilho === "resumo_geral") {
-    return [{ total_cidades: "—", participantes_total: "—", bilheteria_total: "—", investimento_total: "—", data: new Date().toLocaleDateString("pt-BR") }];
+    return [await resumoGeral(supabase)];
   }
   const slugs = await slugsDaNotif(supabase, n);
   const out: Record<string, string | number>[] = [];
