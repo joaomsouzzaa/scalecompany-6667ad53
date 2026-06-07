@@ -4,8 +4,9 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Send, Bot, MessageSquare, Loader2, Trash2 } from "lucide-react";
+import { Plus, Send, Bot, MessageSquare, Loader2, Trash2, Mic, MicOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useSpeechToText } from "@/hooks/use-speech-to-text";
 import { toast } from "sonner";
 
 type Agente = { id: string; nome: string; provider: string; modelo: string | null; ativo: boolean };
@@ -21,6 +22,11 @@ export default function Chat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Ditado por voz: anexa o texto reconhecido ao input.
+  const { supported: micSupported, listening, toggle: toggleMic } = useSpeechToText(
+    (texto) => setInput((prev) => (prev ? `${prev} ${texto}` : texto)),
+  );
 
   const carregarAgentes = useCallback(async () => {
     const { data } = await (supabase as any).from("agentes").select("id,nome,provider,modelo,ativo").eq("ativo", true).order("created_at");
@@ -185,11 +191,20 @@ export default function Chat() {
                   placeholder={`Mensagem para ${agenteAtual?.nome || "o agente"}...`}
                   className="resize-none min-h-[44px] max-h-40"
                 />
+                {micSupported && (
+                  <Button onClick={toggleMic} variant={listening ? "default" : "outline"} size="icon"
+                    title={listening ? "Parar ditado" : "Falar (ditado por voz)"}
+                    className={`h-11 w-11 shrink-0 ${listening ? "animate-pulse" : ""}`}>
+                    {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  </Button>
+                )}
                 <Button onClick={enviar} disabled={loading || !input.trim()} size="icon" className="h-11 w-11 shrink-0">
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </Button>
               </div>
-              <p className="text-[11px] text-muted-foreground text-center mt-2">Enter envia · Shift+Enter quebra linha</p>
+              <p className="text-[11px] text-muted-foreground text-center mt-2">
+                Enter envia · Shift+Enter quebra linha{micSupported ? " · 🎤 fale para ditar" : ""}
+              </p>
             </div>
           </div>
         </main>
