@@ -52,7 +52,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { MoreHorizontal, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, X, Plus, Upload, Download } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, X, Plus, Upload, Download, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { useProdutos } from "@/hooks/useProdutos";
 
@@ -484,6 +484,32 @@ const VendasEventos = () => {
     queryClient.invalidateQueries({ queryKey: ["vendas-tabela"] });
   };
 
+  const duplicarVenda = async (v: VendaRow) => {
+    const { error } = await supabase.from("vendas").insert({
+      produto: v.produto,
+      quantidade: v.quantidade ?? 1,
+      valor: v.valor ?? 0,
+      nome_comprador: v.nome_comprador,
+      email_comprador: v.email_comprador,
+      telefone_comprador: v.telefone_comprador,
+      documento: v.documento,
+      cidade: v.cidade,
+      tipo_ingresso: v.tipo_ingresso,
+      metodo_pagamento: v.metodo_pagamento,
+      status: v.status,
+      cupom: v.cupom,
+      plataforma: v.plataforma || "manual",
+      data_venda: v.data_venda || new Date().toISOString(),
+    });
+    if (error) {
+      toast.error("Erro ao duplicar venda");
+      console.error(error);
+      return;
+    }
+    toast.success("Venda duplicada!");
+    queryClient.invalidateQueries({ queryKey: ["vendas-tabela"] });
+  };
+
   const handleCreateVenda = async () => {
     if (!createForm.produto) {
       toast.error("Informe o produto");
@@ -847,6 +873,10 @@ const VendasEventos = () => {
                               <DropdownMenuItem onClick={() => openEdit(v as VendaRow)}>
                                 <Pencil className="mr-2 h-4 w-4" />
                                 Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => duplicarVenda(v as VendaRow)}>
+                                <Copy className="mr-2 h-4 w-4" />
+                                Duplicar
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="text-destructive"
