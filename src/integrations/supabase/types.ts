@@ -410,6 +410,47 @@ export type Database = {
         }
         Relationships: []
       }
+      tarefa_anexos: {
+        Row: {
+          created_at: string
+          id: string
+          origem: string
+          prompt: string | null
+          status: string
+          tarefa_id: string
+          tipo: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          origem?: string
+          prompt?: string | null
+          status?: string
+          tarefa_id: string
+          tipo?: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          origem?: string
+          prompt?: string | null
+          status?: string
+          tarefa_id?: string
+          tipo?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tarefa_anexos_tarefa_id_fkey"
+            columns: ["tarefa_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tarefa_respostas: {
         Row: {
           autor: string | null
