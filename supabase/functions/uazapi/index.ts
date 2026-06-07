@@ -300,7 +300,7 @@ Deno.serve(async (req) => {
           const msg = render(n.mensagem, vars) + "\n\n_(mensagem de teste)_";
           for (const dest of ds) {
             await enviarTexto(cfg, dest, msg);
-            await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "enviado" });
+            await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "enviado", cidade: (vars as any).cidade || null });
             enviados++;
           }
         }
@@ -323,10 +323,10 @@ Deno.serve(async (req) => {
           for (const dest of destinatariosDe(n)) {
             try {
               await enviarTexto(cfg, dest, msg);
-              await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "enviado" });
+              await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "enviado", cidade: v.cidade || null });
               enviados++;
             } catch (e) {
-              await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "erro", erro: String(e) });
+              await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "erro", erro: String(e), cidade: v.cidade || null });
             }
           }
         }
@@ -346,10 +346,10 @@ Deno.serve(async (req) => {
             for (const dest of destinatariosDe(n)) {
               try {
                 await enviarTexto(cfg, dest, msg);
-                await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "enviado" });
+                await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "enviado", cidade: (vars as any).cidade || null });
                 enviados++;
               } catch (e) {
-                await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "erro", erro: String(e) });
+                await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "erro", erro: String(e), cidade: (vars as any).cidade || null });
               }
             }
           }

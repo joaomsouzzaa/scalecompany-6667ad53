@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
-import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode, Eye, EyeOff, Check, ChevronsUpDown } from "lucide-react";
+import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode, Eye, EyeOff, Check, ChevronsUpDown, History, CheckCircle2, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { syncMetaTokenToServer } from "@/lib/meta-ads";
 import { useCidades } from "@/hooks/useCidades";
@@ -211,6 +211,18 @@ export default function Notificacoes() {
       const { data, error } = await (supabase as any).from("notificacoes").select("*").order("created_at", { ascending: false });
       if (error) throw error;
       return (data || []) as Notificacao[];
+    },
+  });
+
+  // Histórico de envios de uma notificação
+  const [logNotif, setLogNotif] = useState<Notificacao | null>(null);
+  const { data: logs = [], isLoading: loadingLogs } = useQuery({
+    queryKey: ["notificacao_logs", logNotif?.id],
+    enabled: !!logNotif,
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("notificacao_logs")
+        .select("*").eq("notificacao_id", logNotif!.id).order("created_at", { ascending: false }).limit(200);
+      return (data || []) as any[];
     },
   });
 
@@ -473,6 +485,9 @@ export default function Notificacoes() {
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => enviarTeste(n.id)} disabled={testandoId === n.id} title="Enviar teste">
                         {testandoId === n.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                       </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLogNotif(n)} title="Histórico de envios">
+                        <History className="h-4 w-4" />
+                      </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => abrirEdicao(n)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -627,6 +642,48 @@ export default function Notificacoes() {
             </Button>
             <Button onClick={salvarEFechar}>Salvar</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Histórico de envios */}
+      <Dialog open={!!logNotif} onOpenChange={(o) => !o && setLogNotif(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5 text-primary" /> Histórico — {logNotif?.nome}
+            </DialogTitle>
+          </DialogHeader>
+          {logNotif && (
+            <p className="text-xs text-muted-foreground -mt-2">
+              Gatilho: {GATILHOS[logNotif.gatilho]?.label || logNotif.gatilho}
+            </p>
+          )}
+          <div className="space-y-2">
+            {loadingLogs ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Carregando...</p>
+            ) : logs.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Nenhum envio registrado ainda.</p>
+            ) : (
+              logs.map((l) => (
+                <div key={l.id} className="rounded-md border border-border p-3 space-y-1">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs font-medium flex items-center gap-1.5">
+                      {l.status === "erro"
+                        ? <XCircle className="h-3.5 w-3.5 text-destructive" />
+                        : <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+                      {new Date(l.created_at).toLocaleString("pt-BR")}
+                    </span>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {l.cidade && <Badge variant="outline" className="text-[10px]">{l.cidade}</Badge>}
+                      <Badge variant="secondary" className="text-[10px]">{l.destinatario}</Badge>
+                    </div>
+                  </div>
+                  {l.erro && <p className="text-xs text-destructive">Erro: {l.erro}</p>}
+                  <p className="text-sm whitespace-pre-wrap text-muted-foreground bg-muted/40 rounded p-2">{l.mensagem}</p>
+                </div>
+              ))
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
