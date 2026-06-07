@@ -108,6 +108,11 @@ ou então responder ao usuário. Quando tiver a resposta final, responda em TEXT
 normal (sem JSON), consolidando o trabalho da equipe.`;
   const agenteOrq = { ...agente, system_prompt: orchSystem };
 
+  // Um ÚNICO card representa toda a sessão de delegação; cada agente acrescenta
+  // suas respostas dentro dele (em vez de criar um card por delegação).
+  const pedidoOriginal = String([...messages].reverse().find((m) => m.role === "user")?.content || "Tarefa");
+  let tarefaId: string | null = null;
+
   const convo: Msg[] = [...messages];
   for (let round = 0; round < 6; round++) {
     const out = await callModel(agenteOrq, apiKey, convo);
@@ -122,18 +127,20 @@ normal (sem JSON), consolidando o trabalho da equipe.`;
     }
     trace.push(`${agente.nome} → ${child.nome}`);
 
-    // Cria a tarefa no Kanban (coluna do agente) com o briefing
-    let tarefaId: string | null = null;
+    // Cria o card uma única vez (na 1ª delegação); depois apenas reaproveita.
     try {
       const col = await colunaDoAgente(supabase, child);
-      const { data: t } = await supabase.from("tarefas").insert({
-        titulo: `${child.nome}: ${deleg.tarefa.slice(0, 60)}`,
-        descricao: deleg.tarefa, coluna_id: col?.atual?.id || null,
-        agente_id: child.id, origem: "delegacao",
-      }).select("id").single();
-      tarefaId = t?.id || null;
-      // guarda a próxima coluna para avançar depois
-      (deleg as any)._proxima = col?.proxima?.id || null;
+      if (!tarefaId) {
+        const { data: t } = await supabase.from("tarefas").insert({
+          titulo: pedidoOriginal.slice(0, 70),
+          descricao: pedidoOriginal, coluna_id: col?.atual?.id || null,
+          agente_id: child.id, origem: "delegacao",
+        }).select("id").single();
+        tarefaId = t?.id || null;
+      } else {
+        // move o card para a etapa do agente que vai atuar agora
+        await supabase.from("tarefas").update({ coluna_id: col?.atual?.id || null, agente_id: child.id, updated_at: new Date().toISOString() }).eq("id", tarefaId);
+      }
     } catch (_) { /* tabela pode não existir ainda */ }
 
     let childResp = "";
@@ -144,12 +151,13 @@ normal (sem JSON), consolidando o trabalho da equipe.`;
       childResp = `(falha ao executar ${child.nome}: ${e instanceof Error ? e.message : "erro"})`;
     }
 
-    // Registra a resposta na tarefa e avança o card para a próxima etapa
+    // Registra o briefing e a resposta DENTRO do card único, e avança a etapa.
     if (tarefaId) {
       try {
-        await supabase.from("tarefa_respostas").insert({ tarefa_id: tarefaId, autor: child.nome, conteudo: childResp });
-        const prox = (deleg as any)._proxima;
-        if (prox) await supabase.from("tarefas").update({ coluna_id: prox, updated_at: new Date().toISOString() }).eq("id", tarefaId);
+        await supabase.from("tarefa_respostas").insert([
+          { tarefa_id: tarefaId, autor: `${agente.nome} → ${child.nome}`, conteudo: `📋 Briefing: ${deleg.tarefa}` },
+          { tarefa_id: tarefaId, autor: child.nome, conteudo: childResp },
+        ]);
       } catch (_) { /* ignora */ }
     }
 
