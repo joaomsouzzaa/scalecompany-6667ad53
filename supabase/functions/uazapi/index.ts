@@ -69,31 +69,88 @@ function varsDaVenda(v: any): Record<string, string | number> {
   };
 }
 
-// Calcula um resumo de cidade a partir das vendas (métricas do banco;
-// investimento/CAC/projeção dependem do Meta e ficam como "-" por enquanto)
+// ---- Meta Ads (server-side, usa token salvo no banco) ----
+function slugVariants(slug: string): string[] {
+  return (slug || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+function stripLower(s: string): string {
+  return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+const META_EXCLUDE = ["lead", "meteorico"];
+function campMatch(name: string, variants: string[]): boolean {
+  const n = (name || "").toLowerCase();
+  if (!variants.some((v) => n.includes(v))) return false;
+  const na = stripLower(name);
+  if (META_EXCLUDE.some((t) => na.includes(t))) return false;
+  return true;
+}
+const GRAPH = "https://graph.facebook.com/v21.0";
+
+async function metaSpend(meta: any, slug: string): Promise<number> {
+  const variants = slugVariants(slug);
+  const r = await fetch(`${GRAPH}/${meta.account_id}/insights?level=campaign&fields=spend,campaign_name&date_preset=maximum&limit=500&access_token=${meta.access_token}`);
+  const j = await r.json();
+  let spend = 0;
+  for (const row of j.data || []) if (campMatch(row.campaign_name, variants)) spend += parseFloat(row.spend) || 0;
+  return spend;
+}
+async function metaDailyBudget(meta: any, slug: string): Promise<number> {
+  const variants = slugVariants(slug);
+  const cj = await (await fetch(`${GRAPH}/${meta.account_id}/campaigns?fields=id,name,daily_budget,status&limit=500&access_token=${meta.access_token}`)).json();
+  const camps = (cj.data || []).filter((c: any) => c.status === "ACTIVE" && campMatch(c.name, variants));
+  let total = 0; const need = new Set<string>();
+  for (const c of camps) { if (c.daily_budget && +c.daily_budget > 0) total += +c.daily_budget / 100; else need.add(c.id); }
+  if (need.size) {
+    const aj = await (await fetch(`${GRAPH}/${meta.account_id}/adsets?fields=daily_budget,status,campaign&limit=500&access_token=${meta.access_token}`)).json();
+    for (const a of aj.data || []) {
+      if (a.campaign?.id && need.has(a.campaign.id) && a.status === "ACTIVE" && a.daily_budget && +a.daily_budget > 0) total += +a.daily_budget / 100;
+    }
+  }
+  return total;
+}
+
+// Calcula um resumo de cidade (métricas do banco + Meta, se o token estiver salvo)
 async function resumoCidade(supabase: any, cidadeSlug: string | null) {
-  let q = supabase.from("vendas").select("produto,cidade,tipo_ingresso,quantidade,valor").eq("status", "aprovada");
-  const { data } = await q;
-  const rows = (data || []).filter((r: any) => {
-    if (!cidadeSlug) return true;
-    const norm = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s-]/g, "");
-    const parts = cidadeSlug.split(",").map((p) => norm(p)).filter(Boolean);
-    return parts.some((s) => norm(r.cidade || "").includes(s) || norm(r.produto || "").includes(s));
-  });
-  let participantes = 0, vips = 0, convidados = 0, bilheteria = 0;
+  const { data } = await supabase.from("vendas").select("produto,cidade,tipo_ingresso,quantidade,valor").eq("status", "aprovada");
+  const norm = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s-]/g, "");
+  const parts = cidadeSlug ? cidadeSlug.split(",").map((p) => norm(p)).filter(Boolean) : [];
+  const rows = (data || []).filter((r: any) =>
+    !cidadeSlug || parts.some((s) => norm(r.cidade || "").includes(s) || norm(r.produto || "").includes(s)));
+
+  let participantes = 0, pagantes = 0, vips = 0, convidados = 0, bilheteria = 0;
   for (const r of rows) {
     const qty = r.quantidade || 1; const valor = Number(r.valor) || 0; bilheteria += valor;
     const prod = (r.produto || "").toLowerCase();
     if (prod.includes("upgrade")) { vips += qty; continue; }
     participantes += qty;
     if ((r.tipo_ingresso || prod).toLowerCase().includes("vip")) vips += qty;
-    if ((r.tipo_ingresso || "").toLowerCase().includes("convite") || valor === 0) convidados += qty;
+    const convite = (r.tipo_ingresso || "").toLowerCase().includes("convite") || valor === 0;
+    if (convite) convidados += qty; else pagantes += qty;
   }
+
+  let investimento = "-", cac = "-", projecao = "-";
+  const meta = (await supabase.from("meta_config").select("*").maybeSingle()).data;
+  if (meta?.access_token && meta?.account_id && cidadeSlug) {
+    try {
+      const spend = await metaSpend(meta, cidadeSlug);
+      investimento = fmtBRL(spend);
+      const cacNum = pagantes > 0 && spend > 0 ? spend / pagantes : 0;
+      if (cacNum > 0) cac = fmtBRL(cacNum);
+      // Projeção (precisa da data do evento)
+      const { data: cid } = await supabase.from("cidades").select("data_evento").eq("slug", cidadeSlug).maybeSingle();
+      if (cid?.data_evento && cacNum > 0) {
+        const budget = await metaDailyBudget(meta, cidadeSlug);
+        const dias = Math.max(0, Math.ceil((new Date(cid.data_evento).getTime() - Date.now()) / 86400000) + 1);
+        if (budget > 0) projecao = String(Math.ceil(participantes + (budget / cacNum) * dias));
+      }
+    } catch (_) { /* mantém "-" */ }
+  }
+
   return {
     cidade: cidadeSlug || "Todas",
     participantes, vips, convidados,
     bilheteria: fmtBRL(bilheteria),
-    cac: "-", projecao: "-", investimento: "-",
+    cac, projecao, investimento,
   };
 }
 
@@ -136,8 +193,8 @@ Deno.serve(async (req) => {
         const data = await uazFetch(base, UAZAPI.groups(base), cfg.admin_token);
         const list = data.groups || data.data || data || [];
         const groups = (Array.isArray(list) ? list : []).map((g: any) => ({
-          id: g.id || g.jid || g.gid || g.group_id,
-          name: g.name || g.subject || g.title || g.id,
+          id: g.JID || g.id || g.jid || g.gid || g.group_id,
+          name: g.Name || g.name || g.subject || g.title || g.JID || g.id,
         })).filter((g: any) => g.id);
         return json({ groups });
       }
