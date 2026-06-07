@@ -111,19 +111,24 @@ Deno.serve(async (req) => {
       case "connect": {
         if (!cfg?.server_url || !cfg?.admin_token) return json({ error: "Configure URL e token primeiro" }, 400);
         const base = cfg.server_url.replace(/\/$/, "");
-        const data = await uazFetch(base, UAZAPI.connect(base), cfg.admin_token, { instance: cfg.instance });
-        const qrcode = data.qrcode || data.qrCode || data.base64 || data.qr || null;
-        await supabase.from("whatsapp_config").update({ status: data.status || "aguardando_qr" }).eq("id", cfg.id);
-        return json({ qrcode, status: data.status || "aguardando_qr" });
+        const data = await uazFetch(base, UAZAPI.connect(base), cfg.admin_token, {});
+        const inst = data.instance || {};
+        const qrcode = inst.qrcode || data.qrcode || inst.paircode || null;
+        const status = inst.status || (data.connected ? "connected" : "aguardando_qr");
+        await supabase.from("whatsapp_config").update({ status }).eq("id", cfg.id);
+        return json({ qrcode, status });
       }
       case "status": {
         if (!cfg?.server_url || !cfg?.admin_token) return json({ status: "desconectado" });
         const base = cfg.server_url.replace(/\/$/, "");
         const data = await uazFetch(base, UAZAPI.status(base), cfg.admin_token);
-        const status = data.connected || data.status === "connected" ? "connected" : (data.status || "desconectado");
-        const numero = data.number || data.phone || data.jid || null;
+        const inst = data.instance || {};
+        const connected = inst.status === "connected" || data.connected === true;
+        const status = connected ? "connected" : (inst.status || "desconectado");
+        const numero = inst.owner || inst.profileName || null;
+        const qrcode = inst.qrcode || null;
         await supabase.from("whatsapp_config").update({ status, numero }).eq("id", cfg.id);
-        return json({ status, numero, connected: status === "connected" });
+        return json({ status, numero, connected, qrcode });
       }
       case "groups": {
         if (!cfg?.server_url || !cfg?.admin_token) return json({ groups: [] });

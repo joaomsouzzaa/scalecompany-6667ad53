@@ -18,7 +18,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode } from "lucide-react";
+import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useCidades } from "@/hooks/useCidades";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -83,6 +83,7 @@ export default function Notificacoes() {
   const [connecting, setConnecting] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [numeroConectado, setNumeroConectado] = useState<string | null>(null);
+  const [showToken, setShowToken] = useState(false);
 
   useEffect(() => {
     (supabase as any).from("whatsapp_config").select("server_url,instance,status,numero").maybeSingle().then(({ data }: any) => {
@@ -138,6 +139,7 @@ export default function Notificacoes() {
       setCfgStatus(data?.status || "desconectado");
       setNumeroConectado(data?.numero || null);
       if (data?.status === "connected" || data?.connected) setQrCode(null);
+      else if (data?.qrcode) setQrCode(data.qrcode);
     } catch (e: any) {
       toast.error(e?.message || "Falha ao consultar status");
     }
@@ -271,8 +273,15 @@ export default function Notificacoes() {
                   </div>
                   <div className="space-y-1">
                     <Label>Token (admin/instância)</Label>
-                    <Input type="password" placeholder="cole o token"
-                      value={cfg.admin_token} onChange={(e) => setCfg({ ...cfg, admin_token: e.target.value })} />
+                    <div className="relative">
+                      <Input type={showToken ? "text" : "password"} placeholder="cole o token" className="pr-9"
+                        value={cfg.admin_token} onChange={(e) => setCfg({ ...cfg, admin_token: e.target.value })} />
+                      <button type="button" onClick={() => setShowToken((s) => !s)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        aria-label={showToken ? "Ocultar token" : "Mostrar token"}>
+                        {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <Label>Nome da instância</Label>
