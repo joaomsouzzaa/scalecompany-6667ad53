@@ -72,7 +72,11 @@ Deno.serve(async (req) => {
     let submit: any = {};
     try { submit = JSON.parse(submitText); } catch { submit = { raw: submitText }; }
     if (!submitRes.ok) {
-      throw new Error(`Higgsfield ${submitRes.status}: ${submit?.detail || submit?.error || submit?.message || submitText.slice(0, 200)}`);
+      const detalhe = submit?.detail || submit?.error || submit?.message || submitText.slice(0, 200);
+      if (submitRes.status === 403 && /credit/i.test(String(detalhe))) {
+        throw new Error("Sua conta Higgsfield está sem créditos — adicione saldo em cloud.higgsfield.ai");
+      }
+      throw new Error(`Higgsfield ${submitRes.status}: ${detalhe}`);
     }
 
     const requestId = submit.request_id || submit.id || submit.requestId;
