@@ -117,10 +117,45 @@ export default function Notificacoes() {
 
   const chamarUazapi = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
     const { data, error } = await supabase.functions.invoke("uazapi", { body: { action, ...payload } });
-    if (error) throw new Error(error.message);
+    if (error) {
+      // tenta extrair a mensagem real do corpo da resposta (ex.: "Invalid token")
+      let msg = error.message;
+      try { const ctx = (error as any).context; if (ctx?.json) { const b = await ctx.json(); if (b?.error) msg = b.error; } } catch { /* ignore */ }
+      throw new Error(msg);
+    }
     if (data?.error) throw new Error(data.error);
     return data;
   }, []);
+
+  // Atualiza o status. silent=true não mostra toasts (usado no auto-poll).
+  const refreshStatus = useCallback(async (silent = false): Promise<boolean> => {
+    if (!silent) setLoadingStatus(true);
+    try {
+      const data = await chamarUazapi("status");
+      const connected = data?.status === "connected" || data?.connected;
+      setCfgStatus(data?.status || "desconectado");
+      setNumeroConectado(data?.numero || null);
+      if (connected) { setQrCode(null); if (!silent) toast.success("Conectado!"); }
+      else if (data?.qrcode) setQrCode(data.qrcode);
+      return !!connected;
+    } catch (e: any) {
+      if (!silent) toast.error(e?.message || "Falha ao consultar status");
+      else setCfgStatus("erro");
+      return false;
+    } finally {
+      if (!silent) setLoadingStatus(false);
+    }
+  }, [chamarUazapi]);
+
+  // Após conectar, consulta o status a cada 3s por ~1min até conectar (detecta o scan sozinho)
+  const pollUntilConnected = useCallback(() => {
+    let tries = 0;
+    const id = setInterval(async () => {
+      tries++;
+      const ok = await refreshStatus(true);
+      if (ok || tries >= 20) clearInterval(id);
+    }, 3000);
+  }, [refreshStatus]);
 
   const conectar = async () => {
     setConnecting(true);
@@ -131,6 +166,7 @@ export default function Notificacoes() {
       if (data?.qrcode) setQrCode(data.qrcode);
       if (data?.status) setCfgStatus(data.status);
       toast.success("Escaneie o QR Code no WhatsApp");
+      pollUntilConnected();
     } catch (e: any) {
       toast.error(e?.message || "Falha ao conectar. Confira URL e token.");
     } finally {
@@ -138,20 +174,12 @@ export default function Notificacoes() {
     }
   };
 
-  const atualizarStatus = async () => {
-    setLoadingStatus(true);
-    try {
-      const data = await chamarUazapi("status");
-      setCfgStatus(data?.status || "desconectado");
-      setNumeroConectado(data?.numero || null);
-      if (data?.status === "connected" || data?.connected) { setQrCode(null); toast.success("Conectado!"); }
-      else if (data?.qrcode) setQrCode(data.qrcode);
-    } catch (e: any) {
-      toast.error(e?.message || "Falha ao consultar status");
-    } finally {
-      setLoadingStatus(false);
-    }
-  };
+  // Auto-poll do status: ao abrir e a cada 30s (reflete desconexões sozinho)
+  useEffect(() => {
+    refreshStatus(true);
+    const id = setInterval(() => refreshStatus(true), 30000);
+    return () => clearInterval(id);
+  }, [refreshStatus]);
 
   // Grupos do WhatsApp (carregados sob demanda)
   const [grupos, setGrupos] = useState<Array<{ id: string; name: string }>>([]);
@@ -185,6 +213,14 @@ export default function Notificacoes() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [deleting, setDeleting] = useState<Notificacao | null>(null);
+
+  // Carrega os grupos automaticamente ao escolher "Grupo" no dialog (se ainda não carregou)
+  useEffect(() => {
+    if (dialogOpen && form.destinatario_tipo === "grupo" && isConnected && grupos.length === 0 && !loadingGrupos) {
+      carregarGrupos();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialogOpen, form.destinatario_tipo]);
 
   const abrirNovo = () => { setEditingId(null); setForm({ ...emptyForm }); setDialogOpen(true); };
   const abrirEdicao = (n: Notificacao) => {
@@ -332,7 +368,7 @@ export default function Notificacoes() {
                   <Button onClick={conectar} disabled={connecting}>
                     <QrCode className="mr-2 h-4 w-4" /> {connecting ? "Conectando..." : "Conectar / Gerar QR"}
                   </Button>
-                  <Button variant="outline" onClick={atualizarStatus} disabled={loadingStatus}>
+                  <Button variant="outline" onClick={() => refreshStatus(false)} disabled={loadingStatus}>
                     <RefreshCw className={`mr-2 h-4 w-4 ${loadingStatus ? "animate-spin" : ""}`} />
                     {loadingStatus ? "Atualizando..." : "Atualizar status"}
                   </Button>
@@ -436,23 +472,36 @@ export default function Notificacoes() {
             </div>
             <div className="space-y-1">
               <Label>{form.destinatario_tipo === "grupo" ? "Grupo" : "Número (com DDI)"}</Label>
-              {form.destinatario_tipo === "grupo" && grupos.length > 0 ? (
-                <Select value={form.destinatario}
-                  onValueChange={(v) => {
-                    const g = grupos.find((x) => x.id === v);
-                    setForm({ ...form, destinatario: v, destinatario_nome: g?.name || "" });
-                  }}>
-                  <SelectTrigger><SelectValue placeholder="Selecione um grupo" /></SelectTrigger>
-                  <SelectContent>
-                    {grupos.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+              {form.destinatario_tipo === "grupo" ? (
+                loadingGrupos ? (
+                  <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-input text-sm text-muted-foreground">
+                    <RefreshCw className="h-4 w-4 animate-spin" /> Carregando grupos...
+                  </div>
+                ) : grupos.length > 0 ? (
+                  <Select value={form.destinatario}
+                    onValueChange={(v) => {
+                      const g = grupos.find((x) => x.id === v);
+                      setForm({ ...form, destinatario: v, destinatario_nome: g?.name || "" });
+                    }}>
+                    <SelectTrigger><SelectValue placeholder="Selecione um grupo" /></SelectTrigger>
+                    <SelectContent>
+                      {grupos.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="space-y-1">
+                    <Input value={form.destinatario}
+                      onChange={(e) => setForm({ ...form, destinatario: e.target.value })}
+                      placeholder="ID do grupo (xxxx@g.us)" />
+                    <button type="button" onClick={carregarGrupos} className="text-xs text-primary hover:underline">
+                      Recarregar lista de grupos
+                    </button>
+                  </div>
+                )
               ) : (
-                <Input
-                  value={form.destinatario}
+                <Input value={form.destinatario}
                   onChange={(e) => setForm({ ...form, destinatario: e.target.value })}
-                  placeholder={form.destinatario_tipo === "grupo" ? "ID do grupo (xxxx@g.us)" : "5591999999999"}
-                />
+                  placeholder="5591999999999" />
               )}
             </div>
 
