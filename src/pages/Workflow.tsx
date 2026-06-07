@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { KanbanSquare, List, Plus, Trash2, Bot, Send, Settings, ArrowUp, ArrowDown, Image as ImageIcon, Video, Loader2, Paperclip } from "lucide-react";
+import { KanbanSquare, List, Plus, Trash2, Bot, Send, Settings, ArrowUp, ArrowDown, Image as ImageIcon, Video, Loader2, Paperclip, Maximize2, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -86,11 +86,13 @@ export default function Workflow() {
   const isDesign = /design|arte/i.test(etapaNome);
 
   const [gerando, setGerando] = useState<"imagem" | "video" | null>(null);
+  const [provider, setProvider] = useState<"higgsfield" | "openai">("higgsfield");
+  const [lightbox, setLightbox] = useState<Anexo | null>(null);
   const gerarArte = async (tipo: "imagem" | "video") => {
     if (!editing) { toast.error("Salve a tarefa antes de gerar a arte"); return; }
     setGerando(tipo);
     const { data, error } = await (supabase as any).functions.invoke("gerar-arte-higgsfield", {
-      body: { tarefa_id: editing.id, tipo },
+      body: { tarefa_id: editing.id, tipo, provider: tipo === "video" ? "higgsfield" : provider },
     });
     setGerando(null);
     if (error || data?.ok === false) {
@@ -335,28 +337,44 @@ export default function Workflow() {
 
             {editing && isDesign && (
               <div className="space-y-2 border-t border-border pt-3">
-                <Label className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-primary" /> Design — gerar arte (Higgsfield)</Label>
+                <Label className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-primary" /> Design — gerar arte</Label>
                 <p className="text-xs text-muted-foreground">Usa o briefing/copy desta tarefa como prompt e anexa a arte aqui.</p>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select value={provider} onValueChange={(v) => setProvider(v as any)}>
+                    <SelectTrigger className="w-36 h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="higgsfield">Higgsfield</SelectItem>
+                      <SelectItem value="openai">OpenAI</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button variant="outline" size="sm" disabled={!!gerando} onClick={() => gerarArte("imagem")}>
                     {gerando === "imagem" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />} Gerar imagem
                   </Button>
-                  <Button variant="outline" size="sm" disabled={!!gerando} onClick={() => gerarArte("video")}>
+                  <Button variant="outline" size="sm" disabled={!!gerando} title={provider === "openai" ? "Vídeo só no Higgsfield" : undefined} onClick={() => gerarArte("video")}>
                     {gerando === "video" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Video className="mr-2 h-4 w-4" />} Gerar vídeo
                   </Button>
                 </div>
+                {provider === "openai" && <p className="text-[11px] text-muted-foreground">OpenAI gera só imagem — o botão de vídeo usa o Higgsfield.</p>}
                 {anexos.length > 0 && (
                   <div className="grid grid-cols-3 gap-2 pt-1">
                     {anexos.map((a) => (
                       <div key={a.id} className="rounded-md border border-border overflow-hidden bg-muted/40">
                         {a.status === "gerando" ? (
-                          <div className="aspect-square flex items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
+                          <div className="aspect-square flex flex-col items-center justify-center gap-1 text-muted-foreground">
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            <span className="text-[10px]">gerando…</span>
+                          </div>
                         ) : a.status === "erro" ? (
                           <div className="aspect-square flex items-center justify-center text-xs text-destructive p-2 text-center">Erro</div>
-                        ) : a.tipo === "video" ? (
-                          <video src={a.url!} controls className="w-full aspect-square object-cover" />
                         ) : (
-                          <a href={a.url!} target="_blank" rel="noreferrer"><img src={a.url!} alt="arte" className="w-full aspect-square object-cover" /></a>
+                          <button type="button" onClick={() => setLightbox(a)} className="block w-full group relative">
+                            {a.tipo === "video"
+                              ? <video src={a.url!} className="w-full aspect-square object-cover" />
+                              : <img src={a.url!} alt="arte" className="w-full aspect-square object-cover" />}
+                            <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <Maximize2 className="h-5 w-5 text-white" />
+                            </span>
+                          </button>
                         )}
                       </div>
                     ))}
@@ -391,6 +409,27 @@ export default function Workflow() {
               <Button onClick={salvar}>Salvar</Button>
             </div>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox da arte gerada */}
+      <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader><DialogTitle>Arte gerada</DialogTitle></DialogHeader>
+          {lightbox?.url && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-center bg-muted/40 rounded-lg overflow-hidden max-h-[70vh]">
+                {lightbox.tipo === "video"
+                  ? <video src={lightbox.url} controls className="max-h-[70vh] w-auto" />
+                  : <img src={lightbox.url} alt="arte" className="max-h-[70vh] w-auto object-contain" />}
+              </div>
+              <div className="flex justify-end">
+                <Button asChild variant="outline" size="sm">
+                  <a href={lightbox.url} target="_blank" rel="noreferrer" download><Download className="mr-2 h-4 w-4" /> Baixar / abrir</a>
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </SidebarProvider>
