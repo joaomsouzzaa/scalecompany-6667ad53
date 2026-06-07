@@ -373,6 +373,28 @@ export default function Notificacoes() {
   const [sheetsPopover, setSheetsPopover] = useState(false);
   const [colarLink, setColarLink] = useState("");
 
+  const testarSheets = async () => {
+    if (!form.sheets_spreadsheet_id || !form.sheets_aba) { toast.error("Selecione planilha e aba"); return; }
+    const exemplo: Record<string, string> = {
+      nome: "Fulano (teste)", produto: "Workshop Scale | São Paulo - SP", cidade: "São Paulo",
+      valor: "R$ 247,00", tipo: "individual", quantidade: "1", pagamento: "pix",
+      data: new Date().toLocaleString("pt-BR"),
+      participantes: "120", vips: "15", convidados: "8", bilheteria: "R$ 30.000,00",
+      cac: "R$ 180,00", projecao: "150", investimento: "R$ 12.000,00", projecao_investimento: "R$ 20.000,00",
+      total_cidades: "6", participantes_total: "540", bilheteria_total: "R$ 130.000,00", investimento_total: "R$ 60.000,00",
+    };
+    const valores: Record<string, string> = {};
+    for (const [col, tpl] of Object.entries(form.sheets_mapa)) {
+      if (!tpl) continue;
+      valores[col] = String(tpl).replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => exemplo[k] ?? "");
+    }
+    if (Object.keys(valores).length === 0) { toast.error("Mapeie ao menos uma coluna"); return; }
+    try {
+      await gs("append", { spreadsheet_id: form.sheets_spreadsheet_id, aba: form.sheets_aba, valores });
+      toast.success("Linha de teste adicionada na planilha!");
+    } catch (e: any) { toast.error(e.message || "Erro ao escrever no Sheets"); }
+  };
+
   const usarLink = async () => {
     const m = colarLink.match(/\/d\/([a-zA-Z0-9-_]+)/) || colarLink.match(/([a-zA-Z0-9-_]{30,})/);
     const id = m?.[1];
@@ -772,6 +794,9 @@ export default function Notificacoes() {
                         </div>
                       ))}
                       <p className="text-[11px] text-muted-foreground">As colunas vêm do cabeçalho (linha 1) da aba. Deixe "vazio" nas que não quer preencher.</p>
+                      <Button variant="outline" size="sm" onClick={testarSheets}>
+                        <Send className="mr-2 h-4 w-4" /> Testar no Sheets (linha de exemplo)
+                      </Button>
                     </div>
                   )}
                 </div>
