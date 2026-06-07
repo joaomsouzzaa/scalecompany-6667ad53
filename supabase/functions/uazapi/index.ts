@@ -127,9 +127,12 @@ async function resumoCidade(supabase: any, cidadeSlug: string | null) {
   // Usa a MESMA RPC do dashboard (filtra por cidade no servidor) para o report
   // bater com os números do dashboard e evitar o limite de 1000 linhas que
   // subcontava cidades quando carregávamos todas as vendas e filtrávamos no JS.
+  // Janela de 90 dias para trás: evita misturar vendas de um evento anterior
+  // na MESMA cidade (eventos podem se repetir). 90 dias é seguro entre eventos.
+  const inicio90 = new Date(Date.now() - 90 * 86400000).toISOString();
   const { data } = await supabase.rpc("buscar_vendas", {
     p_status: "aprovada",
-    p_start: "2000-01-01T00:00:00Z",
+    p_start: inicio90,
     p_end: "2030-01-01T00:00:00Z",
     p_city_slug: cidadeSlug || null,
   });
