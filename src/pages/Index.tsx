@@ -13,10 +13,13 @@ import {
   Banknote,
   BarChart3,
   Tv,
+  Camera,
+  Loader2,
 } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 import { KpiCard } from "@/components/KpiCard";
 import { DashboardFilters } from "@/components/DashboardFilters";
@@ -79,6 +82,33 @@ const Index = () => {
   // TV Mode: fullscreen + rotate through active cities every 20s
   const [tvMode, setTvMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Print do dashboard para relatório
+  const dashRef = useRef<HTMLDivElement>(null);
+  const [capturando, setCapturando] = useState(false);
+  const gerarPrint = async () => {
+    if (!dashRef.current) return;
+    setCapturando(true);
+    try {
+      const { default: html2canvas } = await import("html2canvas");
+      const bg = getComputedStyle(document.body).backgroundColor || "#0a0a0a";
+      const canvas = await html2canvas(dashRef.current, {
+        backgroundColor: bg, scale: 2, useCORS: true, logging: false,
+        windowWidth: dashRef.current.scrollWidth, windowHeight: dashRef.current.scrollHeight,
+      });
+      const cidade = selectedCidade?.nome ? `-${selectedCidade.nome.replace(/\s+/g, "_")}` : "";
+      const data = new Date().toISOString().slice(0, 10);
+      const link = document.createElement("a");
+      link.download = `dashboard${cidade}-${data}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      toast.success("Print gerado e baixado!");
+    } catch (e: any) {
+      toast.error(`Erro ao gerar print: ${e?.message || "falhou"}`);
+    } finally {
+      setCapturando(false);
+    }
+  };
 
   // Fecha a sidebar ao entrar no Modo TV e reabre ao sair (botão ou ESC)
   useEffect(() => {
@@ -287,6 +317,19 @@ const Index = () => {
                 </p>
               )}
             </div>
+            {!tvMode && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={gerarPrint}
+                disabled={capturando}
+                className="gap-2"
+                title="Gera e baixa um print do dashboard para relatório"
+              >
+                {capturando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                {capturando ? "Gerando..." : "Print relatório"}
+              </Button>
+            )}
             <Button
               variant={tvMode ? "default" : "outline"}
               size="sm"
@@ -298,7 +341,7 @@ const Index = () => {
             </Button>
           </header>
 
-          <div className={tvMode ? "tv-content" : "p-6 space-y-6"}>
+          <div ref={dashRef} className={tvMode ? "tv-content" : "p-6 space-y-6"}>
             {!tvMode && <DashboardFilters filters={filters} onFiltersChange={handleFiltersChange} />}
 
             {/* Row 1 */}
