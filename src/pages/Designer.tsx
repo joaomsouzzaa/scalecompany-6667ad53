@@ -14,6 +14,7 @@ import { Palette, Plus, Trash2, Upload, Image as ImageIcon, Loader2 } from "luci
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import PacotesArte from "@/components/PacotesArte";
 
 type Projeto = { id: string; nome: string; descricao: string | null; cores: string | null; logo_posicao: string; palavras_chave: string | null };
 type Asset = { id: string; projeto_id: string; tipo: string; url: string; descricao: string | null };
@@ -84,6 +85,7 @@ export default function Designer() {
             <Tabs defaultValue="repo">
               <TabsList>
                 <TabsTrigger value="repo">Repositório de Projetos</TabsTrigger>
+                <TabsTrigger value="pacotes">Pacotes de Artes</TabsTrigger>
               </TabsList>
 
               <TabsContent value="repo" className="mt-4 space-y-4">
@@ -102,6 +104,10 @@ export default function Designer() {
                     ))}
                   </div>
                 )}
+              </TabsContent>
+
+              <TabsContent value="pacotes" className="mt-4">
+                <PacotesArte />
               </TabsContent>
             </Tabs>
           </div>
