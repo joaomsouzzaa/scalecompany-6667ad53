@@ -15,6 +15,7 @@ import {
   MapPin,
   Package,
   ChevronDown,
+  Bot,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -46,6 +47,10 @@ const insideSalesItems = [
 const analyticsItems = [
   { title: "Performance", url: "/performance", icon: TrendingUp },
   { title: "Campanhas", url: "/campanhas", icon: BarChart3 },
+];
+
+const growthItems = [
+  { title: "Notificações", url: "/notificacoes", icon: Bot },
 ];
 
 export function AppSidebar() {
@@ -137,6 +142,31 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {analyticsItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild tooltip={item.title}>
+                    <NavLink
+                      to={item.url}
+                      end
+                      className="hover:bg-sidebar-accent/80"
+                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-sidebar-foreground/50 px-3 mb-1">
+            Growth
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {growthItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild tooltip={item.title}>
                     <NavLink

@@ -1,0 +1,478 @@
+import { useState, useEffect, useCallback } from "react";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/AppSidebar";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useCidades } from "@/hooks/useCidades";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+
+// Gatilhos disponíveis e as variáveis que cada um disponibiliza no template
+const GATILHOS: Record<string, { label: string; desc: string; vars: string[] }> = {
+  nova_venda: {
+    label: "Nova venda",
+    desc: "Dispara quando uma venda é registrada",
+    vars: ["nome", "produto", "cidade", "valor", "tipo", "quantidade", "pagamento", "data"],
+  },
+  resumo_cidade: {
+    label: "Resumo de cidade (agendado)",
+    desc: "Resumo periódico de uma cidade",
+    vars: ["cidade", "participantes", "vips", "convidados", "bilheteria", "cac", "projecao", "investimento"],
+  },
+  resumo_geral: {
+    label: "Resumo geral diário (agendado)",
+    desc: "Consolidado de todas as cidades, 1x/dia",
+    vars: ["total_cidades", "participantes_total", "bilheteria_total", "investimento_total", "data"],
+  },
+  manual: {
+    label: "Manual / sob demanda",
+    desc: "Enviado quando você clicar em Enviar",
+    vars: [],
+  },
+};
+
+type Notificacao = {
+  id: string;
+  nome: string;
+  gatilho: string;
+  ativo: boolean;
+  destinatario_tipo: string; // grupo | numero
+  destinatario: string;
+  destinatario_nome: string | null;
+  mensagem: string;
+  cidade_slug: string | null;
+  horario: string | null;
+};
+
+const emptyForm: Omit<Notificacao, "id"> = {
+  nome: "",
+  gatilho: "nova_venda",
+  ativo: true,
+  destinatario_tipo: "grupo",
+  destinatario: "",
+  destinatario_nome: "",
+  mensagem: "",
+  cidade_slug: null,
+  horario: "09:00",
+};
+
+export default function Notificacoes() {
+  const queryClient = useQueryClient();
+  const { data: cidades = [] } = useCidades();
+
+  // ---- Conexão WhatsApp (UAZAPI) ----
+  const [cfg, setCfg] = useState({ server_url: "", admin_token: "", instance: "" });
+  const [cfgStatus, setCfgStatus] = useState<string>("desconectado");
+  const [connecting, setConnecting] = useState(false);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [numeroConectado, setNumeroConectado] = useState<string | null>(null);
+
+  useEffect(() => {
+    (supabase as any).from("whatsapp_config").select("*").maybeSingle().then(({ data }) => {
+      if (data) {
+        setCfg({ server_url: data.server_url || "", admin_token: "", instance: data.instance || "" });
+        setCfgStatus(data.status || "desconectado");
+        setNumeroConectado(data.numero || null);
+      }
+    });
+  }, []);
+
+  const salvarConfig = async () => {
+    // Salva a config (uma linha). admin_token só é gravado se preenchido.
+    const { data: existing } = await (supabase as any).from("whatsapp_config").select("id").maybeSingle();
+    const patch: Record<string, unknown> = {
+      server_url: cfg.server_url.replace(/\/$/, ""),
+      instance: cfg.instance,
+    };
+    if (cfg.admin_token) patch.admin_token = cfg.admin_token;
+    const res = existing
+      ? await (supabase as any).from("whatsapp_config").update(patch).eq("id", existing.id)
+      : await (supabase as any).from("whatsapp_config").insert(patch);
+    if (res.error) { toast.error("Erro ao salvar configuração"); return; }
+    toast.success("Configuração salva");
+  };
+
+  const chamarUazapi = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
+    const { data, error } = await supabase.functions.invoke("uazapi", { body: { action, ...payload } });
+    if (error) throw new Error(error.message);
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }, []);
+
+  const conectar = async () => {
+    setConnecting(true);
+    setQrCode(null);
+    try {
+      await salvarConfig();
+      const data = await chamarUazapi("connect");
+      if (data?.qrcode) setQrCode(data.qrcode);
+      if (data?.status) setCfgStatus(data.status);
+      toast.success("Escaneie o QR Code no WhatsApp");
+    } catch (e: any) {
+      toast.error(e?.message || "Falha ao conectar. Confira URL e token.");
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const atualizarStatus = async () => {
+    try {
+      const data = await chamarUazapi("status");
+      setCfgStatus(data?.status || "desconectado");
+      setNumeroConectado(data?.numero || null);
+      if (data?.status === "connected" || data?.connected) setQrCode(null);
+    } catch (e: any) {
+      toast.error(e?.message || "Falha ao consultar status");
+    }
+  };
+
+  // Grupos do WhatsApp (carregados sob demanda)
+  const [grupos, setGrupos] = useState<Array<{ id: string; name: string }>>([]);
+  const carregarGrupos = async () => {
+    try {
+      const data = await chamarUazapi("groups");
+      setGrupos(data?.groups || []);
+      toast.success(`${(data?.groups || []).length} grupo(s) carregado(s)`);
+    } catch (e: any) {
+      toast.error(e?.message || "Falha ao listar grupos (conecte o WhatsApp primeiro)");
+    }
+  };
+
+  // ---- Notificações (CRUD) ----
+  const { data: notificacoes = [] } = useQuery({
+    queryKey: ["notificacoes"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("notificacoes").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data || []) as Notificacao[];
+    },
+  });
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({ ...emptyForm });
+  const [deleting, setDeleting] = useState<Notificacao | null>(null);
+
+  const abrirNovo = () => { setEditingId(null); setForm({ ...emptyForm }); setDialogOpen(true); };
+  const abrirEdicao = (n: Notificacao) => {
+    setEditingId(n.id);
+    setForm({
+      nome: n.nome, gatilho: n.gatilho, ativo: n.ativo,
+      destinatario_tipo: n.destinatario_tipo, destinatario: n.destinatario,
+      destinatario_nome: n.destinatario_nome || "", mensagem: n.mensagem,
+      cidade_slug: n.cidade_slug, horario: n.horario || "09:00",
+    });
+    setDialogOpen(true);
+  };
+
+  const salvar = async () => {
+    if (!form.nome || !form.destinatario || !form.mensagem) {
+      toast.error("Preencha nome, destinatário e mensagem"); return;
+    }
+    const payload = { ...form, destinatario_nome: form.destinatario_nome || null };
+    const res = editingId
+      ? await (supabase as any).from("notificacoes").update(payload).eq("id", editingId)
+      : await (supabase as any).from("notificacoes").insert(payload);
+    if (res.error) { toast.error("Erro ao salvar notificação"); return; }
+    toast.success("Notificação salva");
+    setDialogOpen(false);
+    queryClient.invalidateQueries({ queryKey: ["notificacoes"] });
+  };
+
+  const excluir = async () => {
+    if (!deleting) return;
+    await (supabase as any).from("notificacoes").delete().eq("id", deleting.id);
+    setDeleting(null);
+    queryClient.invalidateQueries({ queryKey: ["notificacoes"] });
+    toast.success("Notificação excluída");
+  };
+
+  const toggleAtivo = async (n: Notificacao) => {
+    await (supabase as any).from("notificacoes").update({ ativo: !n.ativo }).eq("id", n.id);
+    queryClient.invalidateQueries({ queryKey: ["notificacoes"] });
+  };
+
+  const enviarTeste = async (n: Notificacao) => {
+    try {
+      await chamarUazapi("send_test", { notificacao_id: n.id });
+      toast.success("Mensagem de teste enviada");
+    } catch (e: any) {
+      toast.error(e?.message || "Falha ao enviar teste");
+    }
+  };
+
+  const inserirVar = (v: string) => {
+    setForm((f) => ({ ...f, mensagem: `${f.mensagem}{{${v}}}` }));
+  };
+
+  const isConnected = cfgStatus === "connected" || cfgStatus === "conectado";
+  const gatilhoAtual = GATILHOS[form.gatilho];
+  const precisaCidade = form.gatilho === "nova_venda" || form.gatilho === "resumo_cidade";
+  const precisaHorario = form.gatilho === "resumo_cidade" || form.gatilho === "resumo_geral";
+
+  return (
+    <SidebarProvider>
+      <div className="min-h-screen flex w-full">
+        <AppSidebar />
+        <main className="flex-1 overflow-auto">
+          <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
+            <SidebarTrigger />
+            <div className="flex-1">
+              <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
+                <Bot className="h-5 w-5 text-primary" /> Notificações
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Envie notificações no WhatsApp (UAZAPI) para grupos ou números
+              </p>
+            </div>
+            <Button onClick={abrirNovo} disabled={!isConnected}>
+              <Plus className="mr-2 h-4 w-4" /> Nova notificação
+            </Button>
+          </header>
+
+          <div className="p-6 space-y-6 max-w-5xl">
+            {/* Conexão WhatsApp */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  {isConnected ? <Wifi className="h-4 w-4 text-success" /> : <WifiOff className="h-4 w-4 text-muted-foreground" />}
+                  Conexão WhatsApp (UAZAPI)
+                  <Badge variant={isConnected ? "default" : "secondary"} className="ml-2">
+                    {isConnected ? `Conectado${numeroConectado ? ` · ${numeroConectado}` : ""}` : cfgStatus}
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  Informe os dados da sua instância UAZAPI e conecte escaneando o QR Code no WhatsApp.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label>URL do servidor UAZAPI</Label>
+                    <Input placeholder="https://sua-instancia.uazapi.com"
+                      value={cfg.server_url} onChange={(e) => setCfg({ ...cfg, server_url: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Token (admin/instância)</Label>
+                    <Input type="password" placeholder="cole o token"
+                      value={cfg.admin_token} onChange={(e) => setCfg({ ...cfg, admin_token: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Nome da instância</Label>
+                    <Input placeholder="ex: scaledash"
+                      value={cfg.instance} onChange={(e) => setCfg({ ...cfg, instance: e.target.value })} />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={conectar} disabled={connecting}>
+                    <QrCode className="mr-2 h-4 w-4" /> {connecting ? "Conectando..." : "Conectar / Gerar QR"}
+                  </Button>
+                  <Button variant="outline" onClick={atualizarStatus}>
+                    <RefreshCw className="mr-2 h-4 w-4" /> Atualizar status
+                  </Button>
+                  <Button variant="outline" onClick={carregarGrupos} disabled={!isConnected}>
+                    Carregar grupos
+                  </Button>
+                </div>
+                {qrCode && (
+                  <div className="flex flex-col items-center gap-2 pt-2">
+                    <img
+                      src={qrCode.startsWith("data:") ? qrCode : `data:image/png;base64,${qrCode}`}
+                      alt="QR Code WhatsApp" className="h-56 w-56 rounded-lg border border-border bg-white p-2"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      WhatsApp → Aparelhos conectados → Conectar aparelho → escaneie
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Lista de notificações */}
+            <div className="space-y-3">
+              {!isConnected && (
+                <p className="text-sm text-muted-foreground">
+                  Conecte o WhatsApp acima para criar e enviar notificações.
+                </p>
+              )}
+              {notificacoes.length === 0 ? (
+                <Card><CardContent className="py-10 text-center text-muted-foreground">
+                  Nenhuma notificação configurada ainda.
+                </CardContent></Card>
+              ) : (
+                notificacoes.map((n) => (
+                  <Card key={n.id}>
+                    <CardContent className="flex items-center gap-4 py-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{n.nome}</span>
+                          <Badge variant="secondary">{GATILHOS[n.gatilho]?.label || n.gatilho}</Badge>
+                          {!n.ativo && <Badge variant="outline" className="text-muted-foreground">inativa</Badge>}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 truncate">
+                          → {n.destinatario_tipo === "grupo" ? "Grupo" : "Número"}: {n.destinatario_nome || n.destinatario}
+                          {n.cidade_slug ? ` · ${n.cidade_slug}` : ""}{n.horario && (n.gatilho.startsWith("resumo")) ? ` · ${n.horario}` : ""}
+                        </p>
+                      </div>
+                      <Switch checked={n.ativo} onCheckedChange={() => toggleAtivo(n)} />
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => enviarTeste(n)} title="Enviar teste">
+                        <Send className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => abrirEdicao(n)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleting(n)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
+
+      {/* Dialog de edição */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Editar notificação" : "Nova notificação"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label>Nome</Label>
+              <Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Aviso de venda no grupo" />
+            </div>
+            <div className="space-y-1">
+              <Label>Gatilho</Label>
+              <Select value={form.gatilho} onValueChange={(v) => setForm({ ...form, gatilho: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(GATILHOS).map(([k, g]) => (
+                    <SelectItem key={k} value={k}>{g.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{gatilhoAtual?.desc}</p>
+            </div>
+
+            <div className="space-y-1">
+              <Label>Destinatário</Label>
+              <Select value={form.destinatario_tipo} onValueChange={(v) => setForm({ ...form, destinatario_tipo: v, destinatario: "", destinatario_nome: "" })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="grupo">Grupo</SelectItem>
+                  <SelectItem value="numero">Número</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>{form.destinatario_tipo === "grupo" ? "Grupo" : "Número (com DDI)"}</Label>
+              {form.destinatario_tipo === "grupo" && grupos.length > 0 ? (
+                <Select value={form.destinatario}
+                  onValueChange={(v) => {
+                    const g = grupos.find((x) => x.id === v);
+                    setForm({ ...form, destinatario: v, destinatario_nome: g?.name || "" });
+                  }}>
+                  <SelectTrigger><SelectValue placeholder="Selecione um grupo" /></SelectTrigger>
+                  <SelectContent>
+                    {grupos.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={form.destinatario}
+                  onChange={(e) => setForm({ ...form, destinatario: e.target.value })}
+                  placeholder={form.destinatario_tipo === "grupo" ? "ID do grupo (xxxx@g.us)" : "5591999999999"}
+                />
+              )}
+            </div>
+
+            {precisaCidade && (
+              <div className="space-y-1">
+                <Label>Cidade (filtro)</Label>
+                <Select value={form.cidade_slug || "all"} onValueChange={(v) => setForm({ ...form, cidade_slug: v === "all" ? null : v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as cidades</SelectItem>
+                    {cidades.map((c) => <SelectItem key={c.id} value={c.slug}>{c.nome}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {precisaHorario && (
+              <div className="space-y-1">
+                <Label>Horário do envio</Label>
+                <Input type="time" value={form.horario || ""} onChange={(e) => setForm({ ...form, horario: e.target.value })} />
+              </div>
+            )}
+
+            <div className="space-y-1 md:col-span-2">
+              <Label>Mensagem</Label>
+              {gatilhoAtual?.vars.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-1">
+                  <span className="text-xs text-muted-foreground mr-1">Variáveis:</span>
+                  {gatilhoAtual.vars.map((v) => (
+                    <button key={v} type="button" onClick={() => inserirVar(v)}
+                      className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-accent transition-colors">
+                      {`{{${v}}}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Textarea rows={5} value={form.mensagem} onChange={(e) => setForm({ ...form, mensagem: e.target.value })}
+                placeholder={"Ex: 🎉 Nova venda em {{cidade}}!\nProduto: {{produto}}\nValor: {{valor}}\nComprador: {{nome}}"} />
+            </div>
+
+            <div className="flex items-center justify-between md:col-span-2 rounded-md border p-3">
+              <div>
+                <Label>Ativa</Label>
+                <p className="text-xs text-muted-foreground">Notificações inativas não disparam.</p>
+              </div>
+              <Switch checked={form.ativo} onCheckedChange={(v) => setForm({ ...form, ativo: v })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={salvar}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir notificação?</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{deleting?.nome}" será removida permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={excluir} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </SidebarProvider>
+  );
+}
