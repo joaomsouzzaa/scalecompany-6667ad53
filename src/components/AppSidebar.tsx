@@ -81,7 +81,7 @@ export function AppSidebar() {
           </div>
           <div>
             <h2 className="text-sm font-bold text-sidebar-accent-foreground tracking-tight">
-              Scale Hacki
+              Scale Hacking
             </h2>
             <p className="text-xs text-sidebar-foreground">Dashboard</p>
           </div>
