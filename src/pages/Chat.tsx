@@ -89,6 +89,9 @@ export default function Chat() {
       }
       if (data?.error) throw new Error(data.error);
       reply = data?.reply || "(sem resposta)";
+      // Mostra a trilha de delegação (ex.: "CEO → Copy") quando houver
+      const trace: string[] = data?.trace || [];
+      if (trace.length) reply = `🔗 _${trace.join(" · ")}_\n\n${reply}`;
 
       const botMsg: Mensagem = { role: "assistant", conteudo: reply };
       setMessages((prev) => [...prev, botMsg]);
