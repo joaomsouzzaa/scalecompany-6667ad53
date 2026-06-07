@@ -206,6 +206,7 @@ function EditorCampos({ arte, onClose, onSaved }: { arte: Arte; onClose: () => v
   const [sel, setSel] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string } | null>(null);
+  const resizeRef = useRef<{ id: string; startX: number; startSize: number } | null>(null);
 
   const addCampo = (tipo: string) => {
     const c: Campo = { id: crypto.randomUUID(), tipo, x: 50, y: 50, fontSize: 6, color: "#ffffff", fontFamily: "Inter", align: "center", bold: true };
@@ -215,12 +216,22 @@ function EditorCampos({ arte, onClose, onSaved }: { arte: Arte; onClose: () => v
   const del = (id: string) => { setCampos((p) => p.filter((c) => c.id !== id)); if (sel === id) setSel(null); };
 
   const onMove = (e: React.PointerEvent) => {
-    if (!dragRef.current || !boxRef.current) return;
+    if (!boxRef.current) return;
     const r = boxRef.current.getBoundingClientRect();
+    // Redimensionar (arrastando a alça do canto): muda o tamanho da fonte.
+    if (resizeRef.current) {
+      const dPct = ((e.clientX - resizeRef.current.startX) / r.width) * 100;
+      const novo = Math.min(40, Math.max(2, Math.round((resizeRef.current.startSize + dPct) * 10) / 10));
+      upd(resizeRef.current.id, { fontSize: novo });
+      return;
+    }
+    // Mover
+    if (!dragRef.current) return;
     const x = Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width) * 100));
     const y = Math.min(100, Math.max(0, ((e.clientY - r.top) / r.height) * 100));
     upd(dragRef.current.id, { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 });
   };
+  const fimDrag = () => { dragRef.current = null; resizeRef.current = null; };
 
   const salvar = async () => {
     const { error } = await (supabase as any).from("pacote_artes").update({ campos }).eq("id", arte.id);
@@ -246,7 +257,7 @@ function EditorCampos({ arte, onClose, onSaved }: { arte: Arte; onClose: () => v
           <div className="md:col-span-2">
             <div ref={boxRef} className="relative w-full select-none rounded-md overflow-hidden border border-border bg-black/20"
               style={{ containerType: "inline-size" }}
-              onPointerMove={onMove} onPointerUp={() => (dragRef.current = null)} onPointerLeave={() => (dragRef.current = null)}>
+              onPointerMove={onMove} onPointerUp={fimDrag} onPointerLeave={fimDrag}>
               <img src={arte.url} alt="arte" className="w-full block pointer-events-none" />
               {campos.map((c) => (
                 <span key={c.id}
@@ -258,7 +269,16 @@ function EditorCampos({ arte, onClose, onSaved }: { arte: Arte; onClose: () => v
                     fontSize: `${c.fontSize}cqw`, whiteSpace: "nowrap", cursor: "grab",
                     textShadow: "0 1px 2px rgba(0,0,0,.4)", outline: sel === c.id ? "2px dashed #ef4444" : "none",
                   }}
-                  className="px-0.5">{EXEMPLO[c.tipo]}</span>
+                  className="px-0.5">
+                  {EXEMPLO[c.tipo]}
+                  {sel === c.id && (
+                    <span
+                      onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { id: c.id, startX: e.clientX, startSize: c.fontSize }; }}
+                      style={{ position: "absolute", right: -6, bottom: -6, width: 14, height: 14, background: "#ef4444", borderRadius: 3, cursor: "nwse-resize", border: "2px solid #fff" }}
+                      title="Arraste para redimensionar"
+                    />
+                  )}
+                </span>
               ))}
             </div>
             <p className="text-[11px] text-muted-foreground mt-1">Clique num campo pra editar fonte/cor/tamanho. Arraste pra posicionar.</p>
