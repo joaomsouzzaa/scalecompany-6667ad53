@@ -83,26 +83,51 @@ const Index = () => {
   const [tvMode, setTvMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Print do dashboard para relatório
-  const dashRef = useRef<HTMLDivElement>(null);
+  // Print dos KPIs em 16:9 (apresentação) para relatório no Canva
+  const kpisRef = useRef<HTMLDivElement>(null);
   const [capturando, setCapturando] = useState(false);
   const gerarPrint = async () => {
-    if (!dashRef.current) return;
+    if (!kpisRef.current) return;
     setCapturando(true);
     try {
       const { default: html2canvas } = await import("html2canvas");
       const bg = getComputedStyle(document.body).backgroundColor || "#0a0a0a";
-      const canvas = await html2canvas(dashRef.current, {
+      // 1) Captura só os KPIs em alta resolução.
+      const shot = await html2canvas(kpisRef.current, {
         backgroundColor: bg, scale: 2, useCORS: true, logging: false,
-        windowWidth: dashRef.current.scrollWidth, windowHeight: dashRef.current.scrollHeight,
+        windowWidth: kpisRef.current.scrollWidth, windowHeight: kpisRef.current.scrollHeight,
       });
+
+      // 2) Compõe num canvas 16:9 (1920x1080) com margem, centralizado + título.
+      const W = 1920, H = 1080, pad = 90, titleH = 110;
+      const out = document.createElement("canvas");
+      out.width = W; out.height = H;
+      const ctx = out.getContext("2d")!;
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+      // Título
+      const titulo = `Dashboard${selectedCidade?.nome ? ` — ${selectedCidade.nome}` : ""}`;
+      const dataBR = new Date().toLocaleDateString("pt-BR");
+      ctx.fillStyle = "#ffffff"; ctx.textBaseline = "middle";
+      ctx.font = "bold 44px Inter, system-ui, sans-serif";
+      ctx.fillText(titulo, pad, pad + 22);
+      ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.font = "26px Inter, system-ui, sans-serif";
+      ctx.textAlign = "right"; ctx.fillText(dataBR, W - pad, pad + 22); ctx.textAlign = "left";
+
+      // Área disponível para os KPIs (abaixo do título, com margem)
+      const availW = W - pad * 2, availH = H - pad - titleH - pad;
+      const scale = Math.min(availW / shot.width, availH / shot.height);
+      const dw = shot.width * scale, dh = shot.height * scale;
+      const dx = (W - dw) / 2, dy = titleH + pad + (availH - dh) / 2;
+      ctx.drawImage(shot, dx, dy, dw, dh);
+
+      // 3) Baixa o PNG.
       const cidade = selectedCidade?.nome ? `-${selectedCidade.nome.replace(/\s+/g, "_")}` : "";
-      const data = new Date().toISOString().slice(0, 10);
       const link = document.createElement("a");
-      link.download = `dashboard${cidade}-${data}.png`;
-      link.href = canvas.toDataURL("image/png");
+      link.download = `dashboard${cidade}-${new Date().toISOString().slice(0, 10)}.png`;
+      link.href = out.toDataURL("image/png");
       link.click();
-      toast.success("Print gerado e baixado!");
+      toast.success("Print 16:9 gerado e baixado!");
     } catch (e: any) {
       toast.error(`Erro ao gerar print: ${e?.message || "falhou"}`);
     } finally {
@@ -341,9 +366,10 @@ const Index = () => {
             </Button>
           </header>
 
-          <div ref={dashRef} className={tvMode ? "tv-content" : "p-6 space-y-6"}>
+          <div className={tvMode ? "tv-content" : "p-6 space-y-6"}>
             {!tvMode && <DashboardFilters filters={filters} onFiltersChange={handleFiltersChange} />}
 
+            <div ref={kpisRef} className="space-y-4">
             {/* Row 1 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard
@@ -429,6 +455,8 @@ const Index = () => {
                 icon={Banknote}
               />
             </div>
+            </div>
+            {/* fim dos KPIs (kpisRef) */}
 
             {/* Charts: Investimento x Faturamento primeiro */}
             <div className={tvMode ? "tv-chart" : ""}>
