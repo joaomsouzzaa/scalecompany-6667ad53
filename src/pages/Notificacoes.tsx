@@ -18,7 +18,9 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode, Eye, EyeOff } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
+import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode, Eye, EyeOff, Check, ChevronsUpDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { syncMetaTokenToServer } from "@/lib/meta-ads";
 import { useCidades } from "@/hooks/useCidades";
@@ -213,6 +215,7 @@ export default function Notificacoes() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [deleting, setDeleting] = useState<Notificacao | null>(null);
+  const [grupoPopoverOpen, setGrupoPopoverOpen] = useState(false);
 
   // Carrega os grupos automaticamente ao escolher "Grupo" no dialog (se ainda não carregou)
   useEffect(() => {
@@ -493,16 +496,38 @@ export default function Notificacoes() {
                     <RefreshCw className="h-4 w-4 animate-spin" /> Carregando grupos...
                   </div>
                 ) : grupos.length > 0 ? (
-                  <Select value={form.destinatario}
-                    onValueChange={(v) => {
-                      const g = grupos.find((x) => x.id === v);
-                      setForm({ ...form, destinatario: v, destinatario_nome: g?.name || "" });
-                    }}>
-                    <SelectTrigger><SelectValue placeholder="Selecione um grupo" /></SelectTrigger>
-                    <SelectContent>
-                      {grupos.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={grupoPopoverOpen} onOpenChange={setGrupoPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                        <span className="truncate">
+                          {form.destinatario
+                            ? (grupos.find((g) => g.id === form.destinatario)?.name || form.destinatario_nome || form.destinatario)
+                            : "Selecione um grupo"}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Pesquisar grupo..." />
+                        <CommandList>
+                          <CommandEmpty>Nenhum grupo encontrado.</CommandEmpty>
+                          <CommandGroup>
+                            {grupos.map((g) => (
+                              <CommandItem key={g.id} value={`${g.name} ${g.id}`}
+                                onSelect={() => {
+                                  setForm({ ...form, destinatario: g.id, destinatario_nome: g.name });
+                                  setGrupoPopoverOpen(false);
+                                }}>
+                                <Check className={`mr-2 h-4 w-4 ${form.destinatario === g.id ? "opacity-100" : "opacity-0"}`} />
+                                <span className="truncate">{g.name}</span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 ) : (
                   <div className="space-y-1">
                     <Input value={form.destinatario}
