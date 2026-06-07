@@ -1,8 +1,32 @@
+import { supabase } from "@/integrations/supabase/client";
+
 export interface AdAccount {
   id: string;
   account_id: string;
   name: string;
   currency: string;
+}
+
+// Sincroniza (silenciosamente) o token do Meta do navegador para o servidor,
+// para os resumos agendados de WhatsApp calcularem CAC/investimento/projeção.
+// Só grava quando o token muda — sem chamadas à toa.
+export async function syncMetaTokenToServer(): Promise<void> {
+  try {
+    const token = localStorage.getItem("meta_access_token");
+    if (!token) return;
+    const acc = localStorage.getItem("selected_ad_account");
+    const account_id = acc && acc !== "all" ? acc : "act_1207875286360718";
+    const { data: existing } = await (supabase as any)
+      .from("meta_config").select("id,access_token").maybeSingle();
+    if (existing?.id && existing.access_token === token) return; // já está atualizado
+    if (existing?.id) {
+      await (supabase as any).from("meta_config").update({ access_token: token, account_id }).eq("id", existing.id);
+    } else {
+      await (supabase as any).from("meta_config").insert({ access_token: token, account_id });
+    }
+  } catch {
+    /* silencioso — não atrapalha o dashboard */
+  }
 }
 
 export interface AdSpendResult {

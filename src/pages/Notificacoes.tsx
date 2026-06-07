@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { syncMetaTokenToServer } from "@/lib/meta-ads";
 import { useCidades } from "@/hooks/useCidades";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -167,35 +168,8 @@ export default function Notificacoes() {
     }
   };
 
-  // ---- Sincroniza o token do Meta (do navegador) para o servidor ----
-  const [syncingMeta, setSyncingMeta] = useState(false);
-  const [metaSincronizado, setMetaSincronizado] = useState(false);
-  useEffect(() => {
-    (supabase as any).from("meta_config").select("account_id").maybeSingle().then(({ data }: any) => {
-      if (data?.account_id) setMetaSincronizado(true);
-    });
-  }, []);
-  const sincronizarMeta = async () => {
-    const token = localStorage.getItem("meta_access_token");
-    if (!token) { toast.error("Conecte o Meta no Dashboard primeiro (sem token salvo no navegador)"); return; }
-    const acc = localStorage.getItem("selected_ad_account");
-    const account_id = acc && acc !== "all" ? acc : "act_1207875286360718";
-    setSyncingMeta(true);
-    try {
-      const { data: existing } = await (supabase as any).from("meta_config").select("id").maybeSingle();
-      const patch = { access_token: token, account_id };
-      const res = existing
-        ? await (supabase as any).from("meta_config").update(patch).eq("id", existing.id)
-        : await (supabase as any).from("meta_config").insert(patch);
-      if (res.error) throw res.error;
-      setMetaSincronizado(true);
-      toast.success("Token do Meta sincronizado — resumos agora calculam CAC/investimento");
-    } catch (e: any) {
-      toast.error(e?.message || "Falha ao sincronizar Meta");
-    } finally {
-      setSyncingMeta(false);
-    }
-  };
+  // Sincroniza (em silêncio) o token do Meta para o servidor ao abrir a página
+  useEffect(() => { syncMetaTokenToServer(); }, []);
 
   // ---- Notificações (CRUD) ----
   const { data: notificacoes = [] } = useQuery({
@@ -378,23 +352,6 @@ export default function Notificacoes() {
                     </p>
                   </div>
                 )}
-              </CardContent>
-            </Card>
-
-            {/* Sincronização do Meta para os resumos */}
-            <Card>
-              <CardContent className="flex flex-wrap items-center gap-3 py-4">
-                <div className="flex-1 min-w-[240px]">
-                  <p className="text-sm font-medium">Dados do Meta nos resumos</p>
-                  <p className="text-xs text-muted-foreground">
-                    Para CAC, investimento e projeção nos resumos agendados, sincronize o token do Meta (do seu navegador) para o servidor.
-                    {metaSincronizado ? " ✅ Sincronizado." : ""}
-                  </p>
-                </div>
-                <Button variant="outline" onClick={sincronizarMeta} disabled={syncingMeta}>
-                  {syncingMeta && <RefreshCw className="mr-2 h-4 w-4 animate-spin" />}
-                  {syncingMeta ? "Sincronizando..." : metaSincronizado ? "Re-sincronizar Meta" : "Sincronizar Meta"}
-                </Button>
               </CardContent>
             </Card>
 

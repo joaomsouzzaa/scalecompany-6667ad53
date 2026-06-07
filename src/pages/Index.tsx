@@ -23,7 +23,7 @@ import { DashboardFilters } from "@/components/DashboardFilters";
 import { SalesChart } from "@/components/SalesChart";
 import { PaymentMethodChart } from "@/components/PaymentMethodChart";
 import { fmt, type Filters } from "@/lib/mockData";
-import { fetchAdAccounts, fetchAdSpend, fetchCampaignDailyBudget, fetchDailySpendBreakdown } from "@/lib/meta-ads";
+import { fetchAdAccounts, fetchAdSpend, fetchCampaignDailyBudget, fetchDailySpendBreakdown, syncMetaTokenToServer } from "@/lib/meta-ads";
 import { useVendasData } from "@/hooks/useVendasData";
 import { useCidades } from "@/hooks/useCidades";
 import { getHiddenCidades } from "@/components/EditCidadeDialog";
@@ -186,6 +186,9 @@ const Index = () => {
   useEffect(() => {
     loadSpend();
   }, [loadSpend, refreshKey]);
+
+  // Mantém o token do Meta sincronizado no servidor (resumos do WhatsApp)
+  useEffect(() => { syncMetaTokenToServer(); }, []);
 
   // Auto-refresh every 10 minutes (was 60s — caused Meta rate limiting)
   useEffect(() => {
