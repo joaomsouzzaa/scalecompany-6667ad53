@@ -110,7 +110,11 @@ function isConvite(row: VendaRow): boolean {
 function isDuplo(row: VendaRow): boolean {
   const tipo = (row.tipo_ingresso || "").toLowerCase();
   const nome = (row.produto || "").toLowerCase();
-  return tipo.includes("duplo") || tipo === "duplo" || nome.includes("duplo") || nome.includes("2 pessoas");
+  // quantidade 2 = dupla (2 pessoas), mesmo que tenha sido importado como "individual".
+  // Corrige vendas duplas que vieram rotuladas errado na importação das vendas antigas.
+  if (Number(row.quantidade) === 2) return true;
+  return tipo.includes("duplo") || tipo.includes("dupla") || tipo.includes("casal")
+    || nome.includes("duplo") || nome.includes("dupla") || nome.includes("2 pessoas");
 }
 
 function calcularKpis(vendas: VendaRow[]) {
