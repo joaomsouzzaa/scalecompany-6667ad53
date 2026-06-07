@@ -371,6 +371,19 @@ export default function Notificacoes() {
   const [headersList, setHeadersList] = useState<string[]>([]);
   const [loadingSheets, setLoadingSheets] = useState(false);
   const [sheetsPopover, setSheetsPopover] = useState(false);
+  const [colarLink, setColarLink] = useState("");
+
+  const usarLink = async () => {
+    const m = colarLink.match(/\/d\/([a-zA-Z0-9-_]+)/) || colarLink.match(/([a-zA-Z0-9-_]{30,})/);
+    const id = m?.[1];
+    if (!id) { toast.error("Link ou ID inválido"); return; }
+    try {
+      const d = await gs("list_tabs", { spreadsheet_id: id });
+      setForm((f) => ({ ...f, sheets_spreadsheet_id: id, sheets_spreadsheet_nome: d.title || "Planilha", sheets_aba: "", sheets_mapa: {} }));
+      setTabsList(d.tabs || []); setHeadersList([]); setColarLink("");
+      toast.success(`Planilha carregada: ${d.title || id}`);
+    } catch (e: any) { toast.error(e.message || "Não consegui acessar (sem permissão?)"); }
+  };
 
   const gs = async (action: string, extra: any = {}) => {
     const { data, error } = await (supabase as any).functions.invoke("google-sheets", { body: { action, ...extra } });
@@ -734,6 +747,13 @@ export default function Notificacoes() {
                         <SelectContent>{tabsList.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs">Ou cole o link/ID da planilha (ex.: Drive compartilhado)</Label>
+                      <Input value={colarLink} onChange={(e) => setColarLink(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." />
+                    </div>
+                    <Button variant="outline" onClick={usarLink} disabled={!colarLink.trim()}>Usar</Button>
                   </div>
                   {headersList.length > 0 && (
                     <div className="space-y-2">

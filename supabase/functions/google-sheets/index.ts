@@ -120,6 +120,7 @@ Deno.serve(async (req) => {
         const u = "https://www.googleapis.com/drive/v3/files?q=" +
           encodeURIComponent("mimeType='application/vnd.google-apps.spreadsheet' and trashed=false") +
           "&orderBy=modifiedTime desc&pageSize=1000&fields=nextPageToken,files(id,name)" +
+          "&includeItemsFromAllDrives=true&supportsAllDrives=true&corpora=allDrives" +
           (pageToken ? `&pageToken=${pageToken}` : "");
         const j = await gapi(token, u);
         files.push(...(j.files || []));
@@ -130,9 +131,9 @@ Deno.serve(async (req) => {
 
     if (action === "list_tabs") {
       const token = await getAccessToken(supabase);
-      const j = await gapi(token, `https://sheets.googleapis.com/v4/spreadsheets/${body.spreadsheet_id}?fields=sheets.properties.title`);
+      const j = await gapi(token, `https://sheets.googleapis.com/v4/spreadsheets/${body.spreadsheet_id}?fields=properties.title,sheets.properties.title`);
       const tabs = (j.sheets || []).map((s: any) => s.properties.title);
-      return json({ tabs });
+      return json({ tabs, title: j.properties?.title });
     }
 
     if (action === "list_headers") {
