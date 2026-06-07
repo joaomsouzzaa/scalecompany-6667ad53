@@ -122,13 +122,16 @@ async function resumoCidade(supabase: any, cidadeSlug: string | null) {
   const rows = (data || []).filter((r: any) =>
     !cidadeSlug || parts.some((s) => norm(r.cidade || "").includes(s) || norm(r.produto || "").includes(s)));
 
-  // Nome da cidade conforme aparece nas vendas (ex.: "Porto Alegre"), não a slug
-  const nomeCount: Record<string, number> = {};
+  // Usa o nome COMPLETO do produto que vem nas vendas (com a data),
+  // ex.: "Workshop Scale | Porto Alegre - RS | 09/06/2026" — ignora upgrades.
+  const prodCount: Record<string, number> = {};
   for (const r of rows) {
-    const nome = (r.cidade || "").trim();
-    if (nome) nomeCount[nome] = (nomeCount[nome] || 0) + 1;
+    const p = (r.produto || "").trim();
+    if (p && !p.toLowerCase().includes("upgrade")) prodCount[p] = (prodCount[p] || 0) + 1;
   }
-  const cidadeNome = Object.keys(nomeCount).sort((a, b) => nomeCount[b] - nomeCount[a])[0] || cidadeSlug || "Todas";
+  const cidadeNome = Object.keys(prodCount).sort((a, b) => prodCount[b] - prodCount[a])[0]
+    || (rows.find((r: any) => r.produto)?.produto)
+    || cidadeSlug || "Todas";
 
   let participantes = 0, pagantes = 0, vips = 0, convidados = 0, bilheteria = 0;
   for (const r of rows) {
