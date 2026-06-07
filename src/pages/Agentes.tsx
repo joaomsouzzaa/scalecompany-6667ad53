@@ -14,12 +14,12 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Sparkles, Plus, Pencil, Trash2, Bot, Settings, Eye, EyeOff } from "lucide-react";
+import { Sparkles, Plus, Pencil, Trash2, Bot, Settings, Eye, EyeOff, Network } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import ReactFlow, {
-  Background, Controls, Handle, Position, applyNodeChanges,
+  Background, Controls, Panel, Handle, Position, applyNodeChanges,
   type Node, type Edge, type NodeChange, type Connection,
 } from "reactflow";
 import "reactflow/dist/style.css";
@@ -178,6 +178,38 @@ export default function Agentes() {
     queryClient.invalidateQueries({ queryKey: ["agentes"] });
   }, [queryClient]);
 
+  // Auto-organiza os cards em organograma (alinhado pela hierarquia) e persiste
+  const organizar = useCallback(async () => {
+    if (agentes.length === 0) return;
+    const childrenMap: Record<string, string[]> = {};
+    agentes.forEach((a) => {
+      if (a.parent_id && agentes.find((x) => x.id === a.parent_id)) (childrenMap[a.parent_id] ||= []).push(a.id);
+    });
+    const roots = agentes.filter((a) => !a.parent_id || !agentes.find((x) => x.id === a.parent_id)).map((a) => a.id);
+    const W = 300, H = 280;
+    const pos: Record<string, { x: number; y: number }> = {};
+    const visited = new Set<string>();
+    let nextX = 0;
+    const layout = (id: string, depth: number): number => {
+      if (visited.has(id)) return pos[id]?.x ?? 0;
+      visited.add(id);
+      const kids = (childrenMap[id] || []).filter((k) => !visited.has(k));
+      let x: number;
+      if (kids.length === 0) { x = nextX * W; nextX++; }
+      else { const xs = kids.map((k) => layout(k, depth + 1)); x = (xs[0] + xs[xs.length - 1]) / 2; }
+      pos[id] = { x, y: depth * H };
+      return x;
+    };
+    roots.forEach((r) => layout(r, 0));
+    agentes.forEach((a) => { if (!visited.has(a.id)) { pos[a.id] = { x: nextX * W, y: 0 }; nextX++; visited.add(a.id); } });
+
+    setNodes((nds) => nds.map((n) => (pos[n.id] ? { ...n, position: pos[n.id] } : n)));
+    for (const a of agentes) {
+      if (pos[a.id]) await (supabase as any).from("agentes").update({ pos_x: Math.round(pos[a.id].x), pos_y: Math.round(pos[a.id].y) }).eq("id", a.id);
+    }
+    toast.success("Layout organizado");
+  }, [agentes]);
+
   // ---- Configuração das API keys ----
   const [configOpen, setConfigOpen] = useState(false);
   const [aiKeys, setAiKeys] = useState<Record<string, string>>({ anthropic: "", openai: "", google: "" });
@@ -256,6 +288,11 @@ export default function Agentes() {
               >
                 <Background />
                 <Controls />
+                <Panel position="top-right">
+                  <Button size="sm" variant="secondary" onClick={organizar}>
+                    <Network className="mr-2 h-4 w-4" /> Organizar
+                  </Button>
+                </Panel>
               </ReactFlow>
             )}
           </div>
