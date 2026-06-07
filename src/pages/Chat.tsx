@@ -95,13 +95,22 @@ export default function Chat() {
       }
       if (data?.error) throw new Error(data.error);
       reply = data?.reply || "(sem resposta)";
-      // Mostra a trilha de delegação (ex.: "CEO → Copy") quando houver
-      const trace: string[] = data?.trace || [];
-      if (trace.length) reply = `🔗 _${trace.join(" · ")}_\n\n${reply}`;
 
-      const botMsg: Mensagem = { role: "assistant", conteudo: reply };
-      setMessages((prev) => [...prev, botMsg]);
-      await (supabase as any).from("mensagens").insert({ conversa_id: convId, role: "assistant", conteudo: reply });
+      // Conversa do time passo a passo: cada delegação/ação/resposta vira uma mensagem.
+      const steps: { autor: string; conteudo: string }[] = data?.steps || [];
+      const novasMsgs: Mensagem[] = steps.map((s) => ({
+        role: "assistant" as const, conteudo: `**${s.autor}**\n${s.conteudo}`,
+      }));
+      // Mensagem final do CEO (resposta consolidada ao usuário).
+      novasMsgs.push({
+        role: "assistant",
+        conteudo: steps.length ? `**${agenteAtual?.nome || "CEO"}**\n${reply}` : reply,
+      });
+
+      setMessages((prev) => [...prev, ...novasMsgs]);
+      await (supabase as any).from("mensagens").insert(
+        novasMsgs.map((m) => ({ conversa_id: convId, role: "assistant", conteudo: m.conteudo })),
+      );
       await (supabase as any).from("conversas").update({ updated_at: new Date().toISOString() }).eq("id", convId);
       carregarConversas();
     } catch (e: any) {
