@@ -1,10 +1,14 @@
 import { useState, useEffect } from "react";
-import { Plug, Wifi, WifiOff, Loader2, ShoppingCart, Copy, Check, Users } from "lucide-react";
+import { Plug, Wifi, WifiOff, Loader2, ShoppingCart, Copy, Check, Users, Sheet } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
+import { toast as sonner } from "sonner";
 import {
   Collapsible,
   CollapsibleContent,
@@ -346,10 +350,125 @@ const Integracoes = () => {
 
             {/* CRM — Leads */}
             <CrmWebhookSection />
+
+            {/* Google Sheets */}
+            <GoogleSheetsSection />
           </div>
         </main>
       </div>
     </SidebarProvider>
+  );
+};
+
+const GoogleSheetsSection = () => {
+  const [open, setOpen] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [hasClient, setHasClient] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [email, setEmail] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const status = async () => {
+    const { data } = await (supabase as any).functions.invoke("google-sheets", { body: { action: "status" } });
+    if (data) { setConnected(!!data.connected); setEmail(data.email || null); setHasClient(!!data.has_client); }
+  };
+
+  useEffect(() => {
+    status();
+    // Callback do OAuth: ?code= na URL → troca por tokens.
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    if (code) {
+      (async () => {
+        setLoading(true);
+        const { data, error } = await (supabase as any).functions.invoke("google-sheets", { body: { action: "exchange", code } });
+        setLoading(false);
+        window.history.replaceState({}, "", "/integracoes");
+        if (error || data?.error) sonner.error(`Erro ao conectar Google: ${data?.error || error?.message}`);
+        else { sonner.success(`Google conectado: ${data.email || ""}`); setOpen(true); status(); }
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const salvarCreds = async () => {
+    const patch: any = {};
+    if (clientId.trim()) patch.client_id = clientId.trim();
+    if (clientSecret.trim()) patch.client_secret = clientSecret.trim();
+    if (Object.keys(patch).length) {
+      await (supabase as any).from("google_config").update(patch).eq("id", 1);
+      setClientId(""); setClientSecret("");
+      sonner.success("Credenciais salvas");
+      status();
+    }
+  };
+
+  const conectar = async () => {
+    setLoading(true);
+    await salvarCreds();
+    const { data, error } = await (supabase as any).functions.invoke("google-sheets", { body: { action: "get_auth_url" } });
+    setLoading(false);
+    if (error || data?.error) { sonner.error(data?.error || error?.message || "Erro"); return; }
+    window.location.href = data.url;
+  };
+
+  const desconectar = async () => {
+    await (supabase as any).functions.invoke("google-sheets", { body: { action: "disconnect" } });
+    sonner.success("Google desconectado"); status();
+  };
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer hover:bg-secondary/40 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-green-500/10 flex items-center justify-center">
+                  <Sheet className="h-5 w-5 text-green-500" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Google Sheets</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">Enviar dados das notificações para planilhas</p>
+                </div>
+              </div>
+              <Badge variant={connected ? "default" : "outline"} className="gap-1">
+                {connected ? <><Wifi className="h-3 w-3" /> {email || "Conectado"}</> : <><WifiOff className="h-3 w-3" /> Desconectado</>}
+              </Badge>
+            </div>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="pt-0 space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Crie credenciais OAuth no Google Cloud (Sheets API + Drive API) com redirect
+              <code className="mx-1 px-1 rounded bg-muted">https://app.scalehacking.com.br/integracoes</code>
+              e cole abaixo.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1"><Label>Client ID</Label>
+                <Input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder={hasClient ? "•••••• (salvo)" : "cole o Client ID"} />
+              </div>
+              <div className="space-y-1"><Label>Client Secret</Label>
+                <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={hasClient ? "•••••• (salvo)" : "cole o Client Secret"} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {!connected ? (
+                <Button onClick={conectar} disabled={loading}>
+                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sheet className="mr-2 h-4 w-4" />} Conectar Google
+                </Button>
+              ) : (
+                <Button variant="destructive" onClick={desconectar}>Desconectar</Button>
+              )}
+              <Button variant="outline" onClick={salvarCreds}>Salvar credenciais</Button>
+            </div>
+            {connected && <p className="text-xs text-muted-foreground">Conectado. Configure a planilha em cada notificação (Notificações → editar).</p>}
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   );
 };
 

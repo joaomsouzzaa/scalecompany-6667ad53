@@ -63,6 +63,25 @@ function destinatariosDe(n: any): string[] {
   return n.destinatario ? [n.destinatario] : [];
 }
 
+// Grava uma linha no Google Sheets (via função google-sheets) se ativo na notificação.
+async function enviarSheets(n: any, vars: Record<string, string | number>) {
+  if (!n.sheets_ativo || !n.sheets_spreadsheet_id || !n.sheets_aba) return;
+  const mapa = n.sheets_mapa || {};
+  const valores: Record<string, string> = {};
+  for (const [col, tpl] of Object.entries(mapa)) {
+    if (!tpl) continue;
+    valores[col] = render(String(tpl), vars);
+  }
+  if (Object.keys(valores).length === 0) return;
+  try {
+    await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/google-sheets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+      body: JSON.stringify({ action: "append", spreadsheet_id: n.sheets_spreadsheet_id, aba: n.sheets_aba, valores }),
+    });
+  } catch (e) { console.log("Sheets append falhou:", (e as any)?.message || e); }
+}
+
 // Monta as variáveis a partir de uma venda
 function varsDaVenda(v: any): Record<string, string | number> {
   return {
@@ -303,6 +322,7 @@ Deno.serve(async (req) => {
             await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "enviado", cidade: (vars as any).cidade || null });
             enviados++;
           }
+          await enviarSheets(n, vars);
         }
         return json({ success: true, enviados });
       }
@@ -319,7 +339,8 @@ Deno.serve(async (req) => {
             const match = parts.some((s) => norm(v.cidade || "").includes(s) || norm(v.produto || "").includes(s));
             if (!match) continue;
           }
-          const msg = render(n.mensagem, varsDaVenda(v));
+          const vendaVars = varsDaVenda(v);
+          const msg = render(n.mensagem, vendaVars);
           for (const dest of destinatariosDe(n)) {
             try {
               await enviarTexto(cfg, dest, msg);
@@ -329,6 +350,7 @@ Deno.serve(async (req) => {
               await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "erro", erro: String(e), cidade: v.cidade || null });
             }
           }
+          await enviarSheets(n, vendaVars);
         }
         return json({ success: true, enviados });
       }
@@ -352,6 +374,7 @@ Deno.serve(async (req) => {
                 await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "erro", erro: String(e), cidade: (vars as any).cidade || null });
               }
             }
+            await enviarSheets(n, vars);
           }
         }
         return json({ success: true, enviados });

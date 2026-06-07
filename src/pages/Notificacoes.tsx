@@ -75,6 +75,11 @@ const emptyForm = {
   mensagem: "",
   cidade_slug: null as string | null,
   horario: "09:00" as string | null,
+  sheets_ativo: false,
+  sheets_spreadsheet_id: "" as string,
+  sheets_spreadsheet_nome: "" as string,
+  sheets_aba: "" as string,
+  sheets_mapa: {} as Record<string, string>,
 };
 
 export default function Notificacoes() {
@@ -259,6 +264,11 @@ export default function Notificacoes() {
       nome: n.nome, gatilho: n.gatilho, ativo: n.ativo,
       destinatarios: dests, mensagem: n.mensagem,
       cidade_slug: n.cidade_slug, horario: n.horario || "09:00",
+      sheets_ativo: (n as any).sheets_ativo || false,
+      sheets_spreadsheet_id: (n as any).sheets_spreadsheet_id || "",
+      sheets_spreadsheet_nome: (n as any).sheets_spreadsheet_nome || "",
+      sheets_aba: (n as any).sheets_aba || "",
+      sheets_mapa: (n as any).sheets_mapa || {},
     });
     setDialogOpen(true);
   };
@@ -275,6 +285,11 @@ export default function Notificacoes() {
       destinatarios: dests,
       // legado (1º destinatário) para compatibilidade
       destinatario_tipo: dests[0].tipo, destinatario: dests[0].valor, destinatario_nome: dests[0].nome || null,
+      sheets_ativo: form.sheets_ativo,
+      sheets_spreadsheet_id: form.sheets_spreadsheet_id || null,
+      sheets_spreadsheet_nome: form.sheets_spreadsheet_nome || null,
+      sheets_aba: form.sheets_aba || null,
+      sheets_mapa: form.sheets_mapa || {},
     };
     if (editingId) {
       const { error } = await (supabase as any).from("notificacoes").update(payload).eq("id", editingId);
@@ -349,6 +364,39 @@ export default function Notificacoes() {
       setForm((f) => ({ ...f, mensagem: f.mensagem + token }));
     }
   };
+
+  // ---- Google Sheets (config por notificação) ----
+  const [sheetsList, setSheetsList] = useState<{ id: string; name: string }[]>([]);
+  const [tabsList, setTabsList] = useState<string[]>([]);
+  const [headersList, setHeadersList] = useState<string[]>([]);
+  const [loadingSheets, setLoadingSheets] = useState(false);
+
+  const gs = async (action: string, extra: any = {}) => {
+    const { data, error } = await (supabase as any).functions.invoke("google-sheets", { body: { action, ...extra } });
+    if (error || data?.error) throw new Error(data?.error || error?.message || "Erro Google");
+    return data;
+  };
+  const carregarPlanilhas = async () => {
+    setLoadingSheets(true);
+    try { const d = await gs("list_spreadsheets"); setSheetsList(d.files || []); }
+    catch (e: any) { toast.error(e.message); } finally { setLoadingSheets(false); }
+  };
+  const carregarAbas = async (spreadsheetId: string) => {
+    try { const d = await gs("list_tabs", { spreadsheet_id: spreadsheetId }); setTabsList(d.tabs || []); } catch (e: any) { toast.error(e.message); }
+  };
+  const carregarCabecalhos = async (spreadsheetId: string, aba: string) => {
+    try { const d = await gs("list_headers", { spreadsheet_id: spreadsheetId, aba }); setHeadersList(d.headers || []); } catch (e: any) { toast.error(e.message); }
+  };
+
+  // Ao abrir uma notificação que já tem Sheets, recarrega abas/cabeçalhos.
+  useEffect(() => {
+    if (dialogOpen && form.sheets_ativo) {
+      if (sheetsList.length === 0) carregarPlanilhas();
+      if (form.sheets_spreadsheet_id) carregarAbas(form.sheets_spreadsheet_id);
+      if (form.sheets_spreadsheet_id && form.sheets_aba) carregarCabecalhos(form.sheets_spreadsheet_id, form.sheets_aba);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialogOpen]);
 
   const isConnected = cfgStatus === "connected" || cfgStatus === "conectado";
   const gatilhoAtual = GATILHOS[form.gatilho];
@@ -624,6 +672,59 @@ export default function Notificacoes() {
               )}
               <Textarea ref={mensagemRef} rows={5} value={form.mensagem} onChange={(e) => setForm({ ...form, mensagem: e.target.value })}
                 placeholder={"Ex: 🎉 Nova venda em {{cidade}}!\nProduto: {{produto}}\nValor: {{valor}}\nComprador: {{nome}}"} />
+            </div>
+
+            {/* Google Sheets */}
+            <div className="md:col-span-2 rounded-md border p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Enviar também ao Google Sheets</Label>
+                  <p className="text-xs text-muted-foreground">Grava uma linha na planilha a cada envio.</p>
+                </div>
+                <Switch checked={form.sheets_ativo} onCheckedChange={(v) => {
+                  setForm({ ...form, sheets_ativo: v });
+                  if (v && sheetsList.length === 0) carregarPlanilhas();
+                }} />
+              </div>
+              {form.sheets_ativo && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1"><Label className="text-xs">Planilha</Label>
+                      <Select value={form.sheets_spreadsheet_id || undefined}
+                        onValueChange={(v) => { const nome = sheetsList.find((s) => s.id === v)?.name || ""; setForm({ ...form, sheets_spreadsheet_id: v, sheets_spreadsheet_nome: nome, sheets_aba: "", sheets_mapa: {} }); setHeadersList([]); carregarAbas(v); }}>
+                        <SelectTrigger><SelectValue placeholder={loadingSheets ? "Carregando..." : "Selecione"} /></SelectTrigger>
+                        <SelectContent>{sheetsList.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1"><Label className="text-xs">Aba</Label>
+                      <Select value={form.sheets_aba || undefined} disabled={!form.sheets_spreadsheet_id}
+                        onValueChange={(v) => { setForm({ ...form, sheets_aba: v }); carregarCabecalhos(form.sheets_spreadsheet_id, v); }}>
+                        <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectContent>{tabsList.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {headersList.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-xs">Mapear colunas → dados</Label>
+                      {headersList.map((h) => (
+                        <div key={h} className="flex items-center gap-2">
+                          <span className="text-xs w-32 truncate" title={h}>{h}</span>
+                          <Select value={form.sheets_mapa[h] || "_none"}
+                            onValueChange={(v) => setForm({ ...form, sheets_mapa: { ...form.sheets_mapa, [h]: v === "_none" ? "" : v } })}>
+                            <SelectTrigger className="h-8 flex-1"><SelectValue placeholder="—" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">— vazio</SelectItem>
+                              {gatilhoAtual?.vars.map((v) => <SelectItem key={v} value={`{{${v}}}`}>{`{{${v}}}`}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                      <p className="text-[11px] text-muted-foreground">As colunas vêm do cabeçalho (linha 1) da aba. Deixe "vazio" nas que não quer preencher.</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-between md:col-span-2 rounded-md border p-3">
