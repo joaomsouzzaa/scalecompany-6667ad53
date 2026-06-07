@@ -85,14 +85,14 @@ export default function Workflow() {
   const etapaNome = colunas.find((c) => c.id === form.coluna_id)?.nome || "";
   const isDesign = /design|arte/i.test(etapaNome);
 
-  const [gerando, setGerando] = useState(false);
+  const [gerando, setGerando] = useState<"imagem" | "video" | null>(null);
   const gerarArte = async (tipo: "imagem" | "video") => {
     if (!editing) { toast.error("Salve a tarefa antes de gerar a arte"); return; }
-    setGerando(true);
+    setGerando(tipo);
     const { data, error } = await (supabase as any).functions.invoke("gerar-arte-higgsfield", {
       body: { tarefa_id: editing.id, tipo },
     });
-    setGerando(false);
+    setGerando(null);
     if (error || data?.ok === false) {
       // Supabase esconde o corpo em FunctionsHttpError; lê do context p/ ver a causa real.
       let msg = data?.error || error?.message || "falhou";
@@ -338,11 +338,11 @@ export default function Workflow() {
                 <Label className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-primary" /> Design — gerar arte (Higgsfield)</Label>
                 <p className="text-xs text-muted-foreground">Usa o briefing/copy desta tarefa como prompt e anexa a arte aqui.</p>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled={gerando} onClick={() => gerarArte("imagem")}>
-                    {gerando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />} Gerar imagem
+                  <Button variant="outline" size="sm" disabled={!!gerando} onClick={() => gerarArte("imagem")}>
+                    {gerando === "imagem" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />} Gerar imagem
                   </Button>
-                  <Button variant="outline" size="sm" disabled={gerando} onClick={() => gerarArte("video")}>
-                    {gerando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Video className="mr-2 h-4 w-4" />} Gerar vídeo
+                  <Button variant="outline" size="sm" disabled={!!gerando} onClick={() => gerarArte("video")}>
+                    {gerando === "video" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Video className="mr-2 h-4 w-4" />} Gerar vídeo
                   </Button>
                 </div>
                 {anexos.length > 0 && (
