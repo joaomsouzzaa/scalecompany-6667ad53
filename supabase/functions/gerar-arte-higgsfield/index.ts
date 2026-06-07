@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
     const submitRes = await fetch(`${BASE}/${MODELO[tipo]}`, {
       method: "POST",
       headers: authHeaders,
-      body: JSON.stringify({ input: { prompt, aspect_ratio: aspect, safety_tolerance: 2 } }),
+      body: JSON.stringify({ prompt, aspect_ratio: aspect, safety_tolerance: 2 }),
     });
     const submitText = await submitRes.text();
     let submit: any = {};
