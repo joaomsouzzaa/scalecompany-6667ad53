@@ -38,7 +38,13 @@ async function gerarOpenAI(supabase: any, apiKey: string, prompt: string, aspect
   if (!b64) throw new Error("OpenAI não retornou a imagem");
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   const path = `${crypto.randomUUID()}.png`;
-  const up = await supabase.storage.from("artes-tarefas").upload(path, bytes, { contentType: "image/png", upsert: false });
+  // Garante que o bucket existe (cria na hora se a migration não rodou).
+  await supabase.storage.createBucket("artes-tarefas", { public: true }).catch(() => {});
+  let up = await supabase.storage.from("artes-tarefas").upload(path, bytes, { contentType: "image/png", upsert: false });
+  if (up.error && /not found|bucket/i.test(up.error.message)) {
+    await supabase.storage.createBucket("artes-tarefas", { public: true }).catch(() => {});
+    up = await supabase.storage.from("artes-tarefas").upload(path, bytes, { contentType: "image/png", upsert: false });
+  }
   if (up.error) throw new Error(`Erro ao salvar no storage: ${up.error.message}`);
   return supabase.storage.from("artes-tarefas").getPublicUrl(path).data.publicUrl;
 }

@@ -93,10 +93,6 @@ export default function Workflow() {
   const gerarArte = async (tipo: "imagem" | "video") => {
     if (!editing) { toast.error("Salve a tarefa antes de gerar a arte"); return; }
     setGerando(tipo);
-    // Placeholder otimista: mostra o "gerando…" na galeria já no clique.
-    const tempId = `temp-${Date.now()}`;
-    queryClient.setQueryData(["anexos", editing.id], (old: Anexo[] = []) =>
-      [{ id: tempId, tipo, url: null, status: "gerando", created_at: new Date().toISOString() } as Anexo, ...old]);
     const { data, error } = await (supabase as any).functions.invoke("gerar-arte-higgsfield", {
       body: { tarefa_id: editing.id, tipo, provider: tipo === "video" ? "higgsfield" : provider },
     });
@@ -361,8 +357,16 @@ export default function Workflow() {
                   </Button>
                 </div>
                 {provider === "openai" && <p className="text-[11px] text-muted-foreground">OpenAI gera só imagem — o botão de vídeo usa o Higgsfield.</p>}
-                {anexos.length > 0 && (
+                {(gerando || anexos.length > 0) && (
                   <div className="grid grid-cols-3 gap-2 pt-1">
+                    {gerando && !anexos.some((a) => a.status === "gerando") && (
+                      <div className="rounded-md border border-border overflow-hidden bg-muted/40">
+                        <div className="aspect-square flex flex-col items-center justify-center gap-1 text-muted-foreground">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          <span className="text-[10px]">gerando…</span>
+                        </div>
+                      </div>
+                    )}
                     {anexos.map((a) => (
                       <div key={a.id} className="rounded-md border border-border overflow-hidden bg-muted/40">
                         {a.status === "gerando" ? (
