@@ -120,6 +120,17 @@ function parseCsvLine(line: string, delim: string): string[] {
 
 type ParsedCsv = { rows: Record<string, unknown>[]; recognized: string[]; ignored: string[] };
 
+// Normaliza o status da planilha para o padrão do sistema (feminino: "aprovada")
+function normalizeStatus(raw?: string): string {
+  const s = (raw || "").toLowerCase().trim();
+  if (!s) return "aprovada";
+  if (s.startsWith("aprov") || s.includes("approv") || s.includes("paid") || s.includes("pago") || s.includes("complet")) return "aprovada";
+  if (s.includes("reembol") || s.includes("refund")) return "reembolsada";
+  if (s.includes("cancel") || s.includes("chargeback")) return "cancelada";
+  if (s.includes("pend") || s.includes("aguard") || s.includes("waiting")) return "pendente";
+  return s;
+}
+
 function parseVendasCsv(text: string): ParsedCsv {
   const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter((l) => l.trim() !== "");
   if (lines.length < 2) return { rows: [], recognized: [], ignored: [] };
@@ -144,7 +155,7 @@ function parseVendasCsv(text: string): ParsedCsv {
       tipo_ingresso: rec.tipo_ingresso ? rec.tipo_ingresso.toLowerCase() : null,
       metodo_pagamento: rec.metodo_pagamento || null,
       cupom: rec.cupom || null,
-      status: rec.status ? rec.status.toLowerCase() : "aprovada",
+      status: normalizeStatus(rec.status),
       quantidade: rec.quantidade ? Math.max(1, parseInt(rec.quantidade, 10) || 1) : 1,
       valor: parseBRNumber(rec.valor || "0"),
       data_venda: parseCsvDate(rec.data_venda || ""),
