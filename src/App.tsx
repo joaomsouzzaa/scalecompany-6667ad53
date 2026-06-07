@@ -16,6 +16,7 @@ import Notificacoes from "./pages/Notificacoes";
 import Agentes from "./pages/Agentes";
 import Chat from "./pages/Chat";
 import Workflow from "./pages/Workflow";
+import Designer from "./pages/Designer";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -40,6 +41,7 @@ const App = () => (
           <Route path="/agentes" element={<Agentes />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/workflow" element={<Workflow />} />
+          <Route path="/designer" element={<Designer />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

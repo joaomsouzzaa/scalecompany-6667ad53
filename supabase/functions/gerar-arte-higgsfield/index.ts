@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +15,32 @@ const MODELO = {
 
 function svc() {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+}
+
+async function bytesDe(url: string): Promise<Uint8Array> {
+  const r = await fetch(url);
+  return new Uint8Array(await r.arrayBuffer());
+}
+
+// Sobrepõe a logo do projeto na arte (topo-centro ou base-centro, tamanho discreto).
+async function aplicarLogo(supabase: any, baseUrl: string, logoUrl: string, posicao: string): Promise<string> {
+  const [baseBytes, logoBytes] = await Promise.all([bytesDe(baseUrl), bytesDe(logoUrl)]);
+  const base = await Image.decode(baseBytes);
+  const logo = await Image.decode(logoBytes);
+  // Logo a ~16% da largura — visível mas sem competir com o texto principal.
+  const targetW = Math.round(base.width * 0.16);
+  const targetH = Math.max(1, Math.round(logo.height * (targetW / logo.width)));
+  logo.resize(targetW, targetH);
+  const margem = Math.round(base.height * 0.05);
+  const x = Math.round((base.width - targetW) / 2);
+  const y = posicao === "cima-centro" ? margem : base.height - targetH - margem;
+  base.composite(logo, x, y);
+  const out = await base.encode();
+  const path = `${crypto.randomUUID()}.png`;
+  await supabase.storage.createBucket("artes-tarefas", { public: true }).catch(() => {});
+  const up = await supabase.storage.from("artes-tarefas").upload(path, out, { contentType: "image/png" });
+  if (up.error) throw new Error(up.error.message);
+  return supabase.storage.from("artes-tarefas").getPublicUrl(path).data.publicUrl;
 }
 
 // Procura uma URL de mídia em formatos de resposta variados.
@@ -69,9 +96,27 @@ Deno.serve(async (req) => {
       .from("tarefas").select("titulo,descricao").eq("id", tarefaId).maybeSingle();
     if (!tarefa) throw new Error("Tarefa não encontrada");
 
-    const prompt: string = (body.prompt && String(body.prompt).trim())
+    let prompt: string = (body.prompt && String(body.prompt).trim())
       || [tarefa.titulo, tarefa.descricao].filter(Boolean).join(" — ");
     if (!prompt) throw new Error("Sem copy/prompt para gerar a arte");
+
+    // Projeto/marca: contexto pra IA + logo pra sobrepor no final.
+    const projetoId: string | null = body.projeto_id || null;
+    let logoUrl: string | null = null;
+    let logoPos = "baixo-centro";
+    if (projetoId) {
+      const { data: proj } = await supabase.from("projetos_design").select("*").eq("id", projetoId).maybeSingle();
+      if (proj) {
+        logoPos = proj.logo_posicao || "baixo-centro";
+        const ctx = [
+          proj.cores ? `Use a paleta de cores da marca: ${proj.cores}.` : "",
+          proj.descricao ? `Identidade visual: ${proj.descricao}.` : "",
+        ].filter(Boolean).join(" ");
+        if (ctx) prompt = `${prompt}\n\n${ctx} Respeite a identidade visual da marca.`;
+        const { data: ass } = await supabase.from("projeto_assets").select("tipo,url").eq("projeto_id", projetoId);
+        logoUrl = (ass || []).find((a: any) => a.tipo === "logo")?.url || null;
+      }
+    }
 
     const ins = await supabase.from("tarefa_anexos")
       .insert({ tarefa_id: tarefaId, tipo, prompt, status: "gerando", origem: provider })
@@ -134,6 +179,12 @@ Deno.serve(async (req) => {
     }
 
     if (!url) throw new Error("Não foi possível obter a arte (timeout ou formato inesperado)");
+
+    // Sobrepõe a logo do projeto (apenas em imagem).
+    if (logoUrl && tipo === "imagem") {
+      try { url = await aplicarLogo(supabase, url, logoUrl, logoPos); }
+      catch (e) { console.log("overlay da logo falhou:", (e as any)?.message || e); }
+    }
 
     await supabase.from("tarefa_anexos").update({ url, status: "pronto" }).eq("id", anexoId);
     await supabase.from("tarefa_respostas").insert({

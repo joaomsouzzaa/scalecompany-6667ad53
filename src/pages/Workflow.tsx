@@ -89,12 +89,22 @@ export default function Workflow() {
 
   const [gerando, setGerando] = useState<"imagem" | "video" | null>(null);
   const [provider, setProvider] = useState<"higgsfield" | "openai">("higgsfield");
+  const [projetoId, setProjetoId] = useState<string>("_none");
   const [lightbox, setLightbox] = useState<Anexo | null>(null);
+
+  const { data: projetos = [] } = useQuery({
+    queryKey: ["projetos_design_min"],
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("projetos_design").select("id,nome").order("created_at", { ascending: false });
+      return (data || []) as { id: string; nome: string }[];
+    },
+  });
+
   const gerarArte = async (tipo: "imagem" | "video") => {
     if (!editing) { toast.error("Salve a tarefa antes de gerar a arte"); return; }
     setGerando(tipo);
     const { data, error } = await (supabase as any).functions.invoke("gerar-arte-higgsfield", {
-      body: { tarefa_id: editing.id, tipo, provider: tipo === "video" ? "higgsfield" : provider },
+      body: { tarefa_id: editing.id, tipo, provider: tipo === "video" ? "higgsfield" : provider, projeto_id: projetoId === "_none" ? null : projetoId },
     });
     setGerando(null);
     if (error || data?.ok === false) {
@@ -343,10 +353,17 @@ export default function Workflow() {
                 <p className="text-xs text-muted-foreground">Usa o briefing/copy desta tarefa como prompt e anexa a arte aqui.</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <Select value={provider} onValueChange={(v) => setProvider(v as any)}>
-                    <SelectTrigger className="w-36 h-9"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-32 h-9"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="higgsfield">Higgsfield</SelectItem>
                       <SelectItem value="openai">OpenAI</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={projetoId} onValueChange={setProjetoId}>
+                    <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Projeto/Marca" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Sem marca</SelectItem>
+                      {projetos.map((p) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <Button variant="outline" size="sm" disabled={!!gerando} onClick={() => gerarArte("imagem")}>
