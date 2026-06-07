@@ -82,11 +82,15 @@ async function colunaDoAgente(supabase: any, child: any): Promise<{ atual: any; 
   return { atual, proxima: cols[idx + 1] || atual };
 }
 
-// Executa um agente com capacidade de DELEGAR aos seus filhos ativos (hierarquia)
-async function runAgente(supabase: any, agente: any, messages: Msg[]): Promise<{ text: string; trace: string[] }> {
+type Step = { autor: string; conteudo: string };
+
+// Executa um agente com capacidade de DELEGAR aos seus filhos ativos (hierarquia).
+// onStep é chamado em tempo real a cada passo (delegação, ação, resposta).
+async function runAgente(supabase: any, agente: any, messages: Msg[], onStep?: (s: Step) => void): Promise<{ text: string; trace: string[] }> {
   const { data: children } = await supabase.from("agentes").select("*").eq("parent_id", agente.id).eq("ativo", true);
   const apiKey = await getKey(supabase, agente.provider);
   const trace: string[] = [];
+  const emit = (s: Step) => { try { onStep?.(s); } catch { /* ignore */ } };
 
   if (!children || children.length === 0) {
     return { text: await callModel(agente, apiKey, messages), trace };
@@ -112,14 +116,12 @@ normal (sem JSON), consolidando o trabalho da equipe.`;
   // suas respostas dentro dele (em vez de criar um card por delegação).
   const pedidoOriginal = String([...messages].reverse().find((m) => m.role === "user")?.content || "Tarefa");
   let tarefaId: string | null = null;
-  // Conversa do time passo a passo (delegações, ações e respostas) p/ exibir no chat.
-  const steps: { autor: string; conteudo: string }[] = [];
 
   const convo: Msg[] = [...messages];
   for (let round = 0; round < 6; round++) {
     const out = await callModel(agenteOrq, apiKey, convo);
     const deleg = parseDelegacao(out);
-    if (!deleg) return { text: out, trace, steps };
+    if (!deleg) return { text: out, trace };
 
     const child = (children as any[]).find((c) => norm(c.nome) === norm(deleg.delegar));
     convo.push({ role: "assistant", content: out });
@@ -130,7 +132,7 @@ normal (sem JSON), consolidando o trabalho da equipe.`;
     trace.push(`${agente.nome} → ${child.nome}`);
 
     // Mensagem do CEO delegando ao agente (briefing).
-    steps.push({ autor: `${agente.nome} → ${child.nome}`, conteudo: `📋 ${deleg.tarefa}` });
+    emit({ autor: `${agente.nome} → ${child.nome}`, conteudo: `📋 ${deleg.tarefa}` });
 
     // Cria o card uma única vez (na 1ª delegação); depois apenas reaproveita.
     try {
@@ -143,11 +145,11 @@ normal (sem JSON), consolidando o trabalho da equipe.`;
           agente_id: child.id, origem: "delegacao",
         }).select("id").single();
         tarefaId = t?.id || null;
-        steps.push({ autor: agente.nome, conteudo: `🗂️ Criou a tarefa "${pedidoOriginal.slice(0, 60)}"${etapa ? ` em *${etapa}*` : ""}` });
+        emit({ autor: agente.nome, conteudo: `🗂️ Criou a tarefa "${pedidoOriginal.slice(0, 60)}"${etapa ? ` em *${etapa}*` : ""}` });
       } else {
         // move o card para a etapa do agente que vai atuar agora
         await supabase.from("tarefas").update({ coluna_id: col?.atual?.id || null, agente_id: child.id, updated_at: new Date().toISOString() }).eq("id", tarefaId);
-        if (etapa) steps.push({ autor: agente.nome, conteudo: `➡️ Moveu a tarefa para *${etapa}*` });
+        if (etapa) emit({ autor: agente.nome, conteudo: `➡️ Moveu a tarefa para *${etapa}*` });
       }
     } catch (_) { /* tabela pode não existir ainda */ }
 
@@ -160,7 +162,7 @@ normal (sem JSON), consolidando o trabalho da equipe.`;
     }
 
     // Resposta do agente de volta ao CEO.
-    steps.push({ autor: `${child.nome} → ${agente.nome}`, conteudo: childResp });
+    emit({ autor: `${child.nome} → ${agente.nome}`, conteudo: childResp });
 
     // Registra o briefing e a resposta DENTRO do card único, e avança a etapa.
     if (tarefaId) {
@@ -174,7 +176,7 @@ normal (sem JSON), consolidando o trabalho da equipe.`;
 
     convo.push({ role: "user", content: `[Resposta do agente ${child.nome}]:\n${childResp}\n\nContinue: delegue novamente se precisar, ou responda ao usuário em texto.` });
   }
-  return { text: "Não consegui concluir a tarefa (muitas delegações seguidas).", trace, steps };
+  return { text: "Não consegui concluir a tarefa (muitas delegações seguidas).", trace };
 }
 
 Deno.serve(async (req) => {
@@ -190,8 +192,23 @@ Deno.serve(async (req) => {
     const { data: agente } = await supabase.from("agentes").select("*").eq("id", agente_id).maybeSingle();
     if (!agente) return json({ error: "Agente não encontrado" }, 404);
 
-    const result = await runAgente(supabase, agente, messages as Msg[]);
-    return json({ reply: result.text, trace: result.trace, steps: (result as any).steps || [] });
+    // Stream NDJSON: cada passo do time é enviado em tempo real, e por fim a
+    // resposta consolidada do CEO ({type:"done"}).
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (o: unknown) => controller.enqueue(encoder.encode(JSON.stringify(o) + "\n"));
+        try {
+          const result = await runAgente(supabase, agente, messages as Msg[], (step) => send({ type: "step", step }));
+          send({ type: "done", reply: result.text, trace: result.trace });
+        } catch (e) {
+          send({ type: "error", error: e instanceof Error ? e.message : "Erro interno" });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+    return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "application/x-ndjson" } });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : "Erro interno" }, 500);
   }

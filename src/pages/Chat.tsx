@@ -83,34 +83,62 @@ export default function Chat() {
       setMessages(novaLista);
       await (supabase as any).from("mensagens").insert({ conversa_id: convId, role: "user", conteudo: texto });
 
-      // Chama o agente (modelo)
-      const { data, error } = await supabase.functions.invoke("agente-chat", {
-        body: { agente_id: agenteId, messages: novaLista.map((m) => ({ role: m.role, content: m.conteudo })) },
+      // Chama o agente via STREAM (NDJSON): cada passo do time chega em tempo real.
+      const SB_URL = import.meta.env.VITE_SUPABASE_URL as string;
+      const SB_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+      const resp = await fetch(`${SB_URL}/functions/v1/agente-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+        body: JSON.stringify({ agente_id: agenteId, messages: novaLista.map((m) => ({ role: m.role, content: m.conteudo })) }),
       });
-      let reply = "";
-      if (error) {
-        let msg = error.message;
-        try { const ctx = (error as any).context; if (ctx?.json) { const b = await ctx.json(); if (b?.error) msg = b.error; } } catch { /* */ }
+      if (!resp.ok || !resp.body) {
+        let msg = `Erro ${resp.status}`;
+        try { const b = await resp.json(); if (b?.error) msg = b.error; } catch { /* */ }
         throw new Error(msg);
       }
-      if (data?.error) throw new Error(data.error);
-      reply = data?.reply || "(sem resposta)";
 
-      // Conversa do time passo a passo: cada delegação/ação/resposta vira uma mensagem.
-      const steps: { autor: string; conteudo: string }[] = data?.steps || [];
-      const novasMsgs: Mensagem[] = steps.map((s) => ({
-        role: "assistant" as const, conteudo: `**${s.autor}**\n${s.conteudo}`,
-      }));
-      // Mensagem final do CEO (resposta consolidada ao usuário).
-      novasMsgs.push({
-        role: "assistant",
-        conteudo: steps.length ? `**${agenteAtual?.nome || "CEO"}**\n${reply}` : reply,
-      });
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const novasMsgs: Mensagem[] = []; // acumula p/ persistir no fim
+      let teveStep = false;
 
-      setMessages((prev) => [...prev, ...novasMsgs]);
-      await (supabase as any).from("mensagens").insert(
-        novasMsgs.map((m) => ({ conversa_id: convId, role: "assistant", conteudo: m.conteudo })),
-      );
+      const processar = (obj: any) => {
+        if (obj.type === "step" && obj.step) {
+          teveStep = true;
+          const m: Mensagem = { role: "assistant", conteudo: `**${obj.step.autor}**\n${obj.step.conteudo}` };
+          novasMsgs.push(m);
+          setMessages((prev) => [...prev, m]); // aparece na hora
+        } else if (obj.type === "done") {
+          const reply = obj.reply || "(sem resposta)";
+          const m: Mensagem = { role: "assistant", conteudo: teveStep ? `**${agenteAtual?.nome || "CEO"}**\n${reply}` : reply };
+          novasMsgs.push(m);
+          setMessages((prev) => [...prev, m]);
+        } else if (obj.type === "error") {
+          throw new Error(obj.error || "Erro");
+        }
+      };
+
+      // Lê o stream linha a linha (NDJSON).
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const linhas = buffer.split("\n");
+        buffer = linhas.pop() || "";
+        for (const linha of linhas) {
+          if (linha.trim()) processar(JSON.parse(linha));
+        }
+      }
+      if (buffer.trim()) processar(JSON.parse(buffer));
+
+      // Persiste todas as mensagens geradas.
+      if (novasMsgs.length) {
+        await (supabase as any).from("mensagens").insert(
+          novasMsgs.map((m) => ({ conversa_id: convId, role: "assistant", conteudo: m.conteudo })),
+        );
+      }
       await (supabase as any).from("conversas").update({ updated_at: new Date().toISOString() }).eq("id", convId);
       carregarConversas();
     } catch (e: any) {
