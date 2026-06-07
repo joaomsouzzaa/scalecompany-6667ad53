@@ -88,6 +88,7 @@ export default function Notificacoes() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [numeroConectado, setNumeroConectado] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
+  const [tokenSalvo, setTokenSalvo] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [loadingGrupos, setLoadingGrupos] = useState(false);
   const [testando, setTestando] = useState(false);     // botão do dialog
@@ -99,6 +100,7 @@ export default function Notificacoes() {
         setCfg({ server_url: data.server_url || "", admin_token: "", instance: data.instance || "" });
         setCfgStatus(data.status || "desconectado");
         setNumeroConectado(data.numero || null);
+        setTokenSalvo(!!data.server_url);
       }
     });
   }, []);
@@ -384,9 +386,14 @@ export default function Notificacoes() {
                       value={cfg.server_url} onChange={(e) => setCfg({ ...cfg, server_url: e.target.value })} />
                   </div>
                   <div className="space-y-1">
-                    <Label>Token (admin/instância)</Label>
+                    <Label className="flex items-center gap-2">
+                      Token (admin/instância)
+                      {tokenSalvo && <Badge variant="secondary" className="text-[10px]">salvo</Badge>}
+                    </Label>
                     <div className="relative">
-                      <Input type={showToken ? "text" : "password"} placeholder="cole o token" className="pr-9"
+                      <Input type={showToken ? "text" : "password"}
+                        placeholder={tokenSalvo ? "•••••••• (salvo — deixe em branco p/ manter)" : "cole o token"}
+                        className="pr-9"
                         value={cfg.admin_token} onChange={(e) => setCfg({ ...cfg, admin_token: e.target.value })} />
                       <button type="button" onClick={() => setShowToken((s) => !s)}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
@@ -394,6 +401,11 @@ export default function Notificacoes() {
                         {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
+                    {tokenSalvo && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Token já salvo (oculto por segurança). Deixe em branco para manter, ou cole um novo para substituir.
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <Label>Nome da instância</Label>
