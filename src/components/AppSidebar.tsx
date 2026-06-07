@@ -16,6 +16,7 @@ import {
   Package,
   ChevronDown,
   Bot,
+  Sparkles,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -51,6 +52,7 @@ const analyticsItems = [
 
 const growthItems = [
   { title: "Notificações", url: "/notificacoes", icon: Bot },
+  { title: "Agentes", url: "/agentes", icon: Sparkles },
 ];
 
 export function AppSidebar() {
