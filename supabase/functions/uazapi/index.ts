@@ -171,7 +171,7 @@ async function resumoCidade(supabase: any, cidadeSlug: string | null) {
 }
 
 Deno.serve(async (req) => {
-  console.log("uazapi v2 - investimento so ativas");
+  console.log("uazapi v4");
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   const json = (obj: unknown, status = 200) =>
     new Response(JSON.stringify(obj), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
