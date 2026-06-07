@@ -237,7 +237,7 @@ Deno.serve(async (req) => {
         let vars: Record<string, string | number> = {};
         if (n.gatilho === "nova_venda") {
           vars = varsDaVenda({ nome_comprador: "Fulano (teste)", produto: "Workshop Scale | Belém - PA", cidade: "Belém", valor: 247, tipo_ingresso: "individual", quantidade: 1, metodo_pagamento: "pix", data_venda: new Date().toISOString() });
-        } else if (n.gatilho === "resumo_cidade") {
+        } else if (n.gatilho === "resumo_cidade" || n.gatilho === "manual") {
           vars = await resumoCidade(supabase, n.cidade_slug);
         } else if (n.gatilho === "resumo_geral") {
           vars = { total_cidades: "—", participantes_total: "—", bilheteria_total: "—", investimento_total: "—", data: new Date().toLocaleDateString("pt-BR") };

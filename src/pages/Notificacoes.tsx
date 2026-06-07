@@ -46,8 +46,8 @@ const GATILHOS: Record<string, { label: string; desc: string; vars: string[] }> 
   },
   manual: {
     label: "Manual / sob demanda",
-    desc: "Enviado quando você clicar em Enviar",
-    vars: [],
+    desc: "Enviado quando você clicar em Enviar. Usa o resumo da cidade selecionada.",
+    vars: ["cidade", "participantes", "vips", "convidados", "bilheteria", "cac", "projecao", "investimento", "projecao_investimento"],
   },
 };
 
@@ -340,7 +340,7 @@ export default function Notificacoes() {
 
   const isConnected = cfgStatus === "connected" || cfgStatus === "conectado";
   const gatilhoAtual = GATILHOS[form.gatilho];
-  const precisaCidade = form.gatilho === "nova_venda" || form.gatilho === "resumo_cidade";
+  const precisaCidade = form.gatilho === "nova_venda" || form.gatilho === "resumo_cidade" || form.gatilho === "manual";
   const precisaHorario = form.gatilho === "resumo_cidade" || form.gatilho === "resumo_geral";
 
   return (
