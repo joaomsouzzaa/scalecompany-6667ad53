@@ -370,6 +370,7 @@ export default function Notificacoes() {
   const [tabsList, setTabsList] = useState<string[]>([]);
   const [headersList, setHeadersList] = useState<string[]>([]);
   const [loadingSheets, setLoadingSheets] = useState(false);
+  const [sheetsPopover, setSheetsPopover] = useState(false);
 
   const gs = async (action: string, extra: any = {}) => {
     const { data, error } = await (supabase as any).functions.invoke("google-sheets", { body: { action, ...extra } });
@@ -690,11 +691,33 @@ export default function Notificacoes() {
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="space-y-1"><Label className="text-xs">Planilha</Label>
-                      <Select value={form.sheets_spreadsheet_id || undefined}
-                        onValueChange={(v) => { const nome = sheetsList.find((s) => s.id === v)?.name || ""; setForm({ ...form, sheets_spreadsheet_id: v, sheets_spreadsheet_nome: nome, sheets_aba: "", sheets_mapa: {} }); setHeadersList([]); carregarAbas(v); }}>
-                        <SelectTrigger><SelectValue placeholder={loadingSheets ? "Carregando..." : "Selecione"} /></SelectTrigger>
-                        <SelectContent>{sheetsList.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-                      </Select>
+                      <Popover open={sheetsPopover} onOpenChange={setSheetsPopover}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="w-full justify-between font-normal">
+                            <span className="truncate">{form.sheets_spreadsheet_nome || (loadingSheets ? "Carregando..." : "Selecione")}</span>
+                            <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50 shrink-0" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[280px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Buscar planilha..." />
+                            <CommandList>
+                              <CommandEmpty>Nenhuma planilha encontrada</CommandEmpty>
+                              <CommandGroup>
+                                {sheetsList.map((s) => (
+                                  <CommandItem key={s.id} value={s.name} onSelect={() => {
+                                    setForm({ ...form, sheets_spreadsheet_id: s.id, sheets_spreadsheet_nome: s.name, sheets_aba: "", sheets_mapa: {} });
+                                    setHeadersList([]); carregarAbas(s.id); setSheetsPopover(false);
+                                  }}>
+                                    <Check className={`mr-2 h-4 w-4 ${form.sheets_spreadsheet_id === s.id ? "opacity-100" : "opacity-0"}`} />
+                                    <span className="truncate">{s.name}</span>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <div className="space-y-1"><Label className="text-xs">Aba</Label>
                       <Select value={form.sheets_aba || undefined} disabled={!form.sheets_spreadsheet_id}
