@@ -25,7 +25,7 @@ const PRIORIDADES: Record<string, string> = { baixa: "Baixa", media: "Média", a
 const prioCor: Record<string, string> = { baixa: "secondary", media: "outline", alta: "destructive" };
 
 export default function Workflow() {
-  // v3 build check
+  // v4 build check
 
   const queryClient = useQueryClient();
   const [view, setView] = useState<"kanban" | "lista">("kanban");
