@@ -125,6 +125,39 @@ export type Database = {
         }
         Relationships: []
       }
+      google_config: {
+        Row: {
+          access_token: string | null
+          client_id: string | null
+          client_secret: string | null
+          email: string | null
+          id: number
+          refresh_token: string | null
+          token_expiry: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token?: string | null
+          client_id?: string | null
+          client_secret?: string | null
+          email?: string | null
+          id?: number
+          refresh_token?: string | null
+          token_expiry?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string | null
+          client_id?: string | null
+          client_secret?: string | null
+          email?: string | null
+          id?: number
+          refresh_token?: string | null
+          token_expiry?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       kanban_colunas: {
         Row: {
           agente_id: string | null
@@ -340,6 +373,11 @@ export type Database = {
           id: string
           mensagem: string
           nome: string
+          sheets_aba: string | null
+          sheets_ativo: boolean
+          sheets_mapa: Json
+          sheets_spreadsheet_id: string | null
+          sheets_spreadsheet_nome: string | null
         }
         Insert: {
           ativo?: boolean | null
@@ -354,6 +392,11 @@ export type Database = {
           id?: string
           mensagem: string
           nome: string
+          sheets_aba?: string | null
+          sheets_ativo?: boolean
+          sheets_mapa?: Json
+          sheets_spreadsheet_id?: string | null
+          sheets_spreadsheet_nome?: string | null
         }
         Update: {
           ativo?: boolean | null
@@ -367,6 +410,105 @@ export type Database = {
           horario?: string | null
           id?: string
           mensagem?: string
+          nome?: string
+          sheets_aba?: string | null
+          sheets_ativo?: boolean
+          sheets_mapa?: Json
+          sheets_spreadsheet_id?: string | null
+          sheets_spreadsheet_nome?: string | null
+        }
+        Relationships: []
+      }
+      pacote_artes: {
+        Row: {
+          campos: Json
+          created_at: string
+          id: string
+          ordem: number
+          pacote_id: string
+          url: string
+        }
+        Insert: {
+          campos?: Json
+          created_at?: string
+          id?: string
+          ordem?: number
+          pacote_id: string
+          url: string
+        }
+        Update: {
+          campos?: Json
+          created_at?: string
+          id?: string
+          ordem?: number
+          pacote_id?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pacote_artes_pacote_id_fkey"
+            columns: ["pacote_id"]
+            isOneToOne: false
+            referencedRelation: "pacotes_arte"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pacote_geracoes: {
+        Row: {
+          created_at: string
+          id: string
+          pacote_id: string | null
+          pacote_nome: string | null
+          qtd: number
+          valores: Json
+          zip_url: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          pacote_id?: string | null
+          pacote_nome?: string | null
+          qtd?: number
+          valores?: Json
+          zip_url?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          pacote_id?: string | null
+          pacote_nome?: string | null
+          qtd?: number
+          valores?: Json
+          zip_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pacote_geracoes_pacote_id_fkey"
+            columns: ["pacote_id"]
+            isOneToOne: false
+            referencedRelation: "pacotes_arte"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pacotes_arte: {
+        Row: {
+          created_at: string
+          descricao: string | null
+          id: string
+          nome: string
+        }
+        Insert: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          nome: string
+        }
+        Update: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
           nome?: string
         }
         Relationships: []
