@@ -32,7 +32,7 @@ const GATILHOS: Record<string, { label: string; desc: string; vars: string[] }> 
   nova_venda: {
     label: "Nova venda",
     desc: "Dispara quando uma venda é registrada",
-    vars: ["nome", "email", "telefone", "documento", "produto", "cidade", "valor", "tipo", "quantidade", "pagamento", "data"],
+    vars: ["nome", "email", "telefone", "documento", "produto", "cidade", "valor", "tipo", "status", "quantidade", "pagamento", "data"],
   },
   resumo_cidade: {
     label: "Resumo de cidade (agendado)",
@@ -380,7 +380,7 @@ export default function Notificacoes() {
     const exemplo: Record<string, string> = {
       nome: "Fulano (teste)", email: "fulano@email.com", telefone: "5511999999999", documento: "000.000.000-00",
       produto: "Workshop Scale | São Paulo - SP", cidade: "São Paulo",
-      valor: "R$ 247,00", tipo: "individual", quantidade: "1", pagamento: "pix",
+      valor: "R$ 247,00", tipo: "individual", status: "Aprovada", quantidade: "1", pagamento: "pix",
       data: new Date().toLocaleString("pt-BR"),
       participantes: "120", vips: "15", convidados: "8", bilheteria: "R$ 30.000,00", bilheteria_resultado: "R$ 18.000,00",
       cac: "R$ 180,00", projecao: "150", investimento: "R$ 12.000,00", projecao_investimento: "R$ 20.000,00",

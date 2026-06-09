@@ -99,6 +99,7 @@ function varsDaVenda(v: any): Record<string, string | number> {
     cidade: v.cidade || "",
     valor: fmtBRL(v.valor || 0),
     tipo: formatTipo(v.tipo_ingresso || ""),
+    status: formatTipo(v.status || ""),
     quantidade: v.quantidade || 1,
     pagamento: v.metodo_pagamento || "",
     data: v.data_venda ? new Date(v.data_venda).toLocaleString("pt-BR") : "",
