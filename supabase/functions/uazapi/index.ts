@@ -88,6 +88,17 @@ function formatTipo(s: string): string {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
 }
 
+// Status do pagamento como texto amigável (igual à planilha): "Pagamento aprovado" etc.
+const STATUS_LABEL: Record<string, string> = {
+  aprovada: "Pagamento aprovado",
+  pendente: "Pagamento pendente",
+  cancelada: "Pagamento cancelado",
+  reembolsada: "Pagamento reembolsado",
+};
+function formatStatus(s: string): string {
+  return STATUS_LABEL[(s || "").toLowerCase()] || formatTipo(s);
+}
+
 // Monta as variáveis a partir de uma venda
 function varsDaVenda(v: any): Record<string, string | number> {
   return {
@@ -99,9 +110,10 @@ function varsDaVenda(v: any): Record<string, string | number> {
     cidade: v.cidade || "",
     valor: fmtBRL(v.valor || 0),
     tipo: formatTipo(v.tipo_ingresso || ""),
-    status: formatTipo(v.status || ""),
+    status: formatStatus(v.status || ""),
     quantidade: v.quantidade || 1,
-    pagamento: v.metodo_pagamento || "",
+    pagamento: v.metodo_pagamento || "",            // legado (mantido p/ templates antigos)
+    forma_pagamento: formatTipo(v.metodo_pagamento || ""),
     data: v.data_venda ? new Date(v.data_venda).toLocaleString("pt-BR") : "",
   };
 }
