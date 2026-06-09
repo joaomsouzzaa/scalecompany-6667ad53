@@ -19,6 +19,7 @@ import {
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
 import { KpiCard } from "@/components/KpiCard";
@@ -81,6 +82,7 @@ const Index = () => {
 
   // TV Mode: fullscreen + rotate through active cities every 20s
   const [tvMode, setTvMode] = useState(false);
+  const [tvLayout, setTvLayout] = useState<"16:9" | "3:1">("16:9");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Print dos KPIs em 16:9 (apresentação) para relatório no Canva
@@ -150,18 +152,14 @@ const Index = () => {
     return eventDate >= today;
   });
 
-  const toggleTvMode = async () => {
-    if (!tvMode) {
-      try {
-        await document.documentElement.requestFullscreen();
-      } catch {}
-      setTvMode(true);
-    } else {
-      if (document.fullscreenElement) {
-        try { await document.exitFullscreen(); } catch {}
-      }
-      setTvMode(false);
-    }
+  const entrarTvMode = async (layout: "16:9" | "3:1") => {
+    setTvLayout(layout);
+    try { await document.documentElement.requestFullscreen(); } catch {}
+    setTvMode(true);
+  };
+  const sairTvMode = async () => {
+    if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch {} }
+    setTvMode(false);
   };
 
   useEffect(() => {
@@ -329,7 +327,7 @@ const Index = () => {
       
       <div className="min-h-screen flex w-full">
         <AppSidebar />
-        <main className={tvMode ? "flex-1 tv-mode" : "flex-1 overflow-auto"}>
+        <main className={tvMode ? `flex-1 tv-mode${tvLayout === "3:1" ? " tv-3x1" : ""}` : "flex-1 overflow-auto"}>
           <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
             <SidebarTrigger />
             <div className="flex-1">
@@ -355,15 +353,23 @@ const Index = () => {
                 {capturando ? "Gerando..." : "Print relatório"}
               </Button>
             )}
-            <Button
-              variant={tvMode ? "default" : "outline"}
-              size="sm"
-              onClick={toggleTvMode}
-              className="gap-2"
-            >
-              <Tv className="h-4 w-4" />
-              {tvMode ? "Sair do Modo TV" : "Modo TV"}
-            </Button>
+            {tvMode ? (
+              <Button variant="default" size="sm" onClick={sairTvMode} className="gap-2">
+                <Tv className="h-4 w-4" /> Sair do Modo TV
+              </Button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <Tv className="h-4 w-4" /> Modo TV
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => entrarTvMode("16:9")}>📺 16:9 (1 TV)</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => entrarTvMode("3:1")}>🖥️🖥️🖥️ 3:1 (3 TVs lado a lado)</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </header>
 
           <div className={tvMode ? "tv-content" : "p-6 space-y-6"}>
@@ -458,7 +464,9 @@ const Index = () => {
             </div>
             {/* fim dos KPIs (kpisRef) */}
 
-            {/* Charts: Investimento x Faturamento primeiro */}
+            {/* Charts */}
+            <div className={tvMode ? "tv-charts" : "space-y-6"}>
+            {/* Investimento x Faturamento primeiro */}
             <div className={tvMode ? "tv-chart" : ""}>
             <SalesChart data={(() => {
               // Merge daily Meta spend into chart data
@@ -489,6 +497,7 @@ const Index = () => {
 
             {/* Método de Pagamento depois */}
             <PaymentMethodChart data={kpi.pagamentoPorMetodo} />
+            </div>
           </div>
         </main>
       </div>
