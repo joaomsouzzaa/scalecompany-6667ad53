@@ -114,7 +114,7 @@ function varsDaVenda(v: any): Record<string, string | number> {
     quantidade: v.quantidade || 1,
     pagamento: v.metodo_pagamento || "",            // legado (mantido p/ templates antigos)
     forma_pagamento: formatTipo(v.metodo_pagamento || ""),
-    data: v.data_venda ? new Date(v.data_venda).toLocaleString("pt-BR") : "",
+    data: v.data_venda ? new Date(v.data_venda).toLocaleDateString("pt-BR") : "",
   };
 }
 

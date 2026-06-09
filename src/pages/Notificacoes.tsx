@@ -381,7 +381,7 @@ export default function Notificacoes() {
       nome: "Fulano (teste)", email: "fulano@email.com", telefone: "5511999999999", documento: "000.000.000-00",
       produto: "Workshop Scale | São Paulo - SP", cidade: "São Paulo",
       valor: "R$ 247,00", tipo: "Individual", status: "Pagamento aprovado", quantidade: "1", pagamento: "Pix", forma_pagamento: "Pix",
-      data: new Date().toLocaleString("pt-BR"),
+      data: new Date().toLocaleDateString("pt-BR"),
       participantes: "120", vips: "15", convidados: "8", bilheteria: "R$ 30.000,00", bilheteria_resultado: "R$ 18.000,00",
       cac: "R$ 180,00", projecao: "150", investimento: "R$ 12.000,00", projecao_investimento: "R$ 20.000,00",
       total_cidades: "6", participantes_total: "540", bilheteria_total: "R$ 130.000,00", investimento_total: "R$ 60.000,00", bilheteria_resultado_total: "R$ 70.000,00",
