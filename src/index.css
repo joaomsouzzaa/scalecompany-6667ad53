@@ -199,9 +199,9 @@
 }
 .tv-mode.tv-3x1 .tv-content > * { min-width: 0; min-height: 0; }
 
-/* Coluna 1 — KPIs empilhados, 2 colunas internas, preenchendo a altura */
+/* Coluna 1 — KPIs centralizados verticalmente, 2 colunas internas */
 .tv-mode.tv-3x1 > .tv-content > div:first-child {
-  display: flex; flex-direction: column; justify-content: space-evenly; gap: 1rem;
+  display: flex; flex-direction: column; justify-content: center; gap: 1.25rem;
 }
 .tv-mode.tv-3x1 .tv-content .grid {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -210,13 +210,25 @@
 .tv-mode.tv-3x1 .kpi-card .kpi-value { font-size: clamp(1.6rem, 1.8vw, 3rem); }
 .tv-mode.tv-3x1 .kpi-card .kpi-title { font-size: clamp(0.85rem, 0.9vw, 1.2rem); }
 
-/* Colunas 2 e 3 — cada gráfico preenche a tela inteira da sua coluna */
+/* Colunas 2 e 3 — gráfico centralizado e preenchendo a coluna (sem cortar) */
 .tv-mode.tv-3x1 .tv-chart,
-.tv-mode.tv-3x1 .tv-pay { height: 100% !important; max-height: none; display: flex; flex-direction: column; min-height: 0; }
-.tv-mode.tv-3x1 .tv-pay > div { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
-.tv-mode.tv-3x1 .tv-pay > div > div:last-child { flex: 1 1 0; min-height: 0; }
-/* donut/área do gráfico de pagamento ocupa o espaço da coluna */
-.tv-mode.tv-3x1 .tv-pay .flex.flex-col { height: 100%; }
-.tv-mode.tv-3x1 .tv-pay [class*="h-[300px]"] { height: 100% !important; min-height: 0; }
+.tv-mode.tv-3x1 .tv-pay {
+  height: 100% !important; max-height: none; min-height: 0;
+  display: flex; flex-direction: column; justify-content: center;
+}
+/* o Card de cada gráfico ocupa a coluna toda */
+.tv-mode.tv-3x1 .tv-chart > div:last-child,
+.tv-mode.tv-3x1 .tv-pay > div {
+  flex: 1 1 0; min-height: 0; width: 100%;
+  display: flex; flex-direction: column;
+}
+/* CardContent preenche o resto */
+.tv-mode.tv-3x1 .tv-pay > div > div:last-child { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+/* Pizza: empilha donut em cima e legenda embaixo (não corta na largura) */
+.tv-mode.tv-3x1 .tv-pay > div > div:last-child > div {
+  flex-direction: column !important; height: 100%; gap: 1rem; justify-content: center;
+}
+.tv-mode.tv-3x1 .tv-pay > div > div:last-child > div > div { width: 100% !important; }
+.tv-mode.tv-3x1 .tv-pay [class*="h-[300px]"] { height: auto !important; flex: 1 1 0; min-height: 0; }
 
 
