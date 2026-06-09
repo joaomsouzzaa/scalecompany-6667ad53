@@ -315,16 +315,23 @@ Deno.serve(async (req) => {
         // 1 mensagem por cidade ativa (quando "todas") — enviadas separadamente
         const varsList = await buildVarsList(supabase, n);
         let enviados = 0;
+        const erros: string[] = [];
         for (const vars of varsList) {
           const msg = render(n.mensagem, vars) + "\n\n_(mensagem de teste)_";
           for (const dest of ds) {
-            await enviarTexto(cfg, dest, msg);
-            await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "enviado", cidade: (vars as any).cidade || null });
-            enviados++;
+            try {
+              await enviarTexto(cfg, dest, msg);
+              await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "enviado", cidade: (vars as any).cidade || null });
+              enviados++;
+            } catch (e) {
+              // Um número/cidade que falha não pode abortar o restante do lote.
+              erros.push(`${(vars as any).cidade || ""} → ${dest}: ${e instanceof Error ? e.message : e}`);
+              await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "erro", erro: String(e), cidade: (vars as any).cidade || null });
+            }
           }
           await enviarSheets(n, vars);
         }
-        return json({ success: true, enviados });
+        return json({ success: true, enviados, erros });
       }
       case "nova_venda": {
         // Chamado pelo trigger do banco quando uma venda é inserida
