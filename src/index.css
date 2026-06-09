@@ -193,21 +193,23 @@
 .tv-mode.tv-3x1 .tv-content {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1.5rem;
+  gap: 2.5rem;            /* mais respiro entre as 3 telas (bezel) */
   align-items: stretch;
   justify-content: initial;
-  /* menos respiro vertical (cabe os 13 KPIs), mantém lateral p/ as bordas/bezel */
-  padding: 1.25rem 3.5rem;
+  /* menos respiro vertical (cabe os 13 KPIs), mais lateral p/ as bordas */
+  padding: 1.25rem 4rem;
 }
 .tv-mode.tv-3x1 .tv-content > * { min-width: 0; min-height: 0; }
 
-/* Coluna 1 — KPIs compactos, 2 colunas, centralizados e SEM cortar/quebrar */
+/* Coluna 1 — KPIs compactos e centralizados (não esticam na largura) */
 .tv-mode.tv-3x1 > .tv-content > div:first-child {
   display: flex; flex-direction: column; justify-content: center; gap: 0.6rem;
 }
 .tv-mode.tv-3x1 .tv-content .grid {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   gap: 0.6rem 1rem !important;
+  max-width: 88%;        /* estreita os cards e dá respiro nas laterais */
+  margin-left: auto; margin-right: auto; width: 100%;
 }
 .tv-mode.tv-3x1 .kpi-card { padding: 0.55rem 0.9rem !important; }
 .tv-mode.tv-3x1 .kpi-card .kpi-value {
