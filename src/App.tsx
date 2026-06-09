@@ -22,7 +22,17 @@ import Performance from "./pages/Performance";
 import Campanhas from "./pages/Campanhas";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+// Auto-refresh: todas as queries re-buscam a cada 10 min (mesmo sem F5, e em background).
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchInterval: 10 * 60 * 1000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      staleTime: 60 * 1000,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

@@ -37,11 +37,12 @@ const Index = () => {
   const [filters, setFilters] = useState<Filters>(() => {
     const savedAccount = localStorage.getItem("selected_ad_account");
     const savedCity = localStorage.getItem("selected_city");
-    // Filtro de data SEMPRE inicia em "últimos 90 dias" (não restaura o último escolhido).
+    // Filtro de data SEMPRE inicia em "últimos 90 dias" (incl. hoje), com as datas reais visíveis.
+    const e = new Date(); const s = new Date(); s.setDate(s.getDate() - 89);
     return {
       dateRange: "90d",
-      startDate: undefined,
-      endDate: undefined,
+      startDate: s,
+      endDate: e,
       adAccount: savedAccount || "all",
       city: savedCity || "all",
       produtos: [],

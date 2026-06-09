@@ -242,10 +242,10 @@ type VendaRow = {
 };
 
 const VendasEventos = () => {
-  // Filtro de data SEMPRE inicia em "últimos 90 dias" (não restaura o último escolhido).
+  // Filtro de data SEMPRE inicia em "últimos 90 dias" (incl. hoje), com as datas reais visíveis.
   const [dateRange, setDateRange] = useState<string>("90d");
-  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
-  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+  const [startDate, setStartDate] = useState<Date | undefined>(() => { const s = new Date(); s.setDate(s.getDate() - 89); return s; });
+  const [endDate, setEndDate] = useState<Date | undefined>(() => new Date());
   const [city, setCity] = useState("all");
   const [tipoIngressoFilter, setTipoIngressoFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState("aprovada");

@@ -78,10 +78,10 @@ const fmt = (v: number) =>
   `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const DashboardGeral = () => {
-  // Filtro de data SEMPRE inicia em "últimos 90 dias" (não restaura o último escolhido).
+  // Filtro de data SEMPRE inicia em "últimos 90 dias" (incl. hoje), com as datas reais visíveis.
   const [dateRange, setDateRange] = useState<string>("90d");
-  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
-  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+  const [startDate, setStartDate] = useState<Date | undefined>(() => { const s = new Date(); s.setDate(s.getDate() - 89); return s; });
+  const [endDate, setEndDate] = useState<Date | undefined>(() => new Date());
 
   const { data: cidades = [] } = useCidades();
   const hiddenCidades = getHiddenCidades();
@@ -113,6 +113,12 @@ const DashboardGeral = () => {
   const [metaSpendMap, setMetaSpendMap] = useState<Map<string, number>>(new Map());
   const [projecaoMap, setProjecaoMap] = useState<Map<string, number | null>>(new Map());
   const [loadingMeta, setLoadingMeta] = useState<boolean>(isMetaConnected);
+  // Auto-refresh do Meta a cada 10 min (mesmo sem F5).
+  const [metaTick, setMetaTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setMetaTick((k) => k + 1), 10 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
   // Fetch Meta spend per city
   useEffect(() => {
@@ -155,7 +161,7 @@ const DashboardGeral = () => {
     };
 
     fetchSpend();
-  }, [isMetaConnected, visibleCidades.length, dateRange, startDate, endDate]);
+  }, [isMetaConnected, visibleCidades.length, dateRange, startDate, endDate, metaTick]);
 
   // Calculate KPIs per city
   const cityKpis = useMemo(() => {
