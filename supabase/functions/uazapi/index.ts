@@ -215,12 +215,14 @@ async function resumoCidade(supabase: any, cidadeSlug: string | null) {
       const { data: cid } = await supabase.from("cidades").select("data_evento").eq("slug", cidadeSlug).maybeSingle();
       if (cid?.data_evento) {
         const budget = await metaDailyBudget(meta, cidadeSlug);
-        // Dias restantes contando o dia do evento como meio dia (até ~12h), não inteiro.
-        const ev = new Date(cid.data_evento);
+        // Dias restantes (fuso SP): dia do evento só capta até 12h; depois disso zera.
+        const spDate = (d: Date) => new Date(d.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+        const ev = spDate(new Date(cid.data_evento));
+        const agora = spDate(new Date());
         const evDia = Date.UTC(ev.getFullYear(), ev.getMonth(), ev.getDate());
-        const agora = new Date();
         const hojeDia = Date.UTC(agora.getFullYear(), agora.getMonth(), agora.getDate());
-        const dias = Math.max(0, Math.round((evDia - hojeDia) / 86400000) + 0.5);
+        const diffDias = Math.round((evDia - hojeDia) / 86400000);
+        const dias = diffDias < 0 ? 0 : diffDias === 0 ? (agora.getHours() < 12 ? 0.5 : 0) : diffDias + 0.5;
         if (budget > 0) {
           // Investimento projetado = gasto atual + orçamento diário × dias restantes
           projecao_investimento = fmtBRL(spend + budget * dias);

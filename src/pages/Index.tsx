@@ -298,8 +298,13 @@ const Index = () => {
         // Strip time components to count full calendar days (inclusive)
         const eventDateOnly = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
         const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        // Dia do evento conta só meio dia (até ~12h), não um dia inteiro de captação.
-        const daysRemaining = Math.max(0, differenceInDays(eventDateOnly, todayOnly) + 0.5);
+        const diffDias = differenceInDays(eventDateOnly, todayOnly);
+        // Dia do evento só capta até as 12h: depois disso (ou evento passado) não projeta mais.
+        const daysRemaining = diffDias < 0
+          ? 0
+          : diffDias === 0
+            ? (today.getHours() < 12 ? 0.5 : 0)
+            : diffDias + 0.5;
 
         console.log(`[Projeção] CAC=${cacParticipanteDisplay}, dailyBudget=${dailyBudget}, daysRemaining=${daysRemaining}, participantes=${kpi.participantes}`);
 
