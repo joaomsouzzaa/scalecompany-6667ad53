@@ -1080,7 +1080,7 @@ const VendasEventos = () => {
 
       {/* Import CSV Dialog */}
       <Dialog open={importOpen} onOpenChange={(o) => { setImportOpen(o); if (!o) resetImport(); }}>
-        <DialogContent className={`${importPreview.length > 0 ? "max-w-4xl" : "max-w-lg"} overflow-hidden`}>
+        <DialogContent className={`${importPreview.length > 0 ? "max-w-5xl" : "max-w-lg"} max-h-[90vh] overflow-y-auto`}>
           <DialogHeader>
             <DialogTitle>Importar Vendas (CSV)</DialogTitle>
           </DialogHeader>
@@ -1143,7 +1143,7 @@ const VendasEventos = () => {
               )}
 
               <div className="max-h-[360px] w-full overflow-auto rounded-md border border-border bg-card">
-                <Table className="min-w-[640px]">
+                <Table>
                   <TableHeader className="sticky top-0 bg-card">
                     <TableRow>
                       <TableHead className="whitespace-nowrap">Data</TableHead>
