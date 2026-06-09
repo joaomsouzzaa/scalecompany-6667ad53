@@ -82,10 +82,10 @@ export default function Designer() {
           </header>
 
           <div className="flex-1 overflow-y-auto p-6">
-            <Tabs defaultValue="repo">
+            <Tabs defaultValue="pacotes">
               <TabsList>
-                <TabsTrigger value="repo">Repositório de Projetos</TabsTrigger>
                 <TabsTrigger value="pacotes">Pacotes de Artes</TabsTrigger>
+                <TabsTrigger value="repo">Repositório de Projetos</TabsTrigger>
               </TabsList>
 
               <TabsContent value="repo" className="mt-4 space-y-4">
