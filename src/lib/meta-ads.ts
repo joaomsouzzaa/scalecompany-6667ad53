@@ -484,6 +484,100 @@ export async function fetchDailyMetrics(
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+export interface CampaignRow {
+  id: string; name: string; spend: number; reach: number; impressions: number;
+  clicks: number; ctr: number; cpc: number; frequency: number;
+  views: number; reactions: number; saves: number; comments: number;
+}
+export interface AdSetRow {
+  campaign: string; name: string; spend: number; reach: number; clicks: number; ctr: number; cpc: number; frequency: number;
+}
+export interface AdRow {
+  name: string; campaign: string; spend: number; impressions: number; clicks: number; ctr: number;
+}
+
+function rangeParam(startDate?: Date, endDate?: Date, dateRange = "30d"): string {
+  return JSON.stringify(clampTimeRange(startDate && endDate
+    ? { since: startDate.toISOString().split("T")[0], until: endDate.toISOString().split("T")[0] }
+    : buildTimeRange(dateRange)));
+}
+
+/** Insights por CAMPANHA (cards de Performance por Campanha). */
+export async function fetchCampaignBreakdown(
+  accountIds: string[], startDate?: Date, endDate?: Date, dateRange = "30d", campaignSlug?: string, strictSales = false
+): Promise<CampaignRow[]> {
+  const time_range = rangeParam(startDate, endDate, dateRange);
+  const variants = campaignSlug ? slugVariants(campaignSlug) : [];
+  const rows: CampaignRow[] = [];
+  await Promise.all(accountIds.map(async (id) => {
+    const res = await graphApiFetch<{ data: Array<any> }>(`/${id}/insights`, {
+      level: "campaign", time_range, limit: "500",
+      fields: "campaign_id,campaign_name,spend,reach,impressions,clicks,ctr,cpc,frequency,actions",
+    });
+    for (const r of res.data || []) {
+      if (campaignSlug && !campaignMatchesSlug(r.campaign_name, variants, strictSales)) continue;
+      rows.push({
+        id: r.campaign_id, name: r.campaign_name || "—",
+        spend: parseFloat(r.spend) || 0, reach: parseInt(r.reach) || 0, impressions: parseInt(r.impressions) || 0,
+        clicks: parseInt(r.clicks) || 0, ctr: parseFloat(r.ctr) || 0, cpc: parseFloat(r.cpc) || 0, frequency: parseFloat(r.frequency) || 0,
+        views: sumAction(r.actions, ["video_view"]),
+        reactions: sumAction(r.actions, ["post_reaction"]),
+        saves: sumAction(r.actions, ["onsite_conversion.post_save", "post_save"]),
+        comments: sumAction(r.actions, ["comment"]),
+      });
+    }
+  }));
+  return rows.sort((a, b) => b.spend - a.spend);
+}
+
+/** Insights por CONJUNTO DE ANÚNCIOS (tabela). */
+export async function fetchAdSetBreakdown(
+  accountIds: string[], startDate?: Date, endDate?: Date, dateRange = "30d", campaignSlug?: string, strictSales = false
+): Promise<AdSetRow[]> {
+  const time_range = rangeParam(startDate, endDate, dateRange);
+  const variants = campaignSlug ? slugVariants(campaignSlug) : [];
+  const rows: AdSetRow[] = [];
+  await Promise.all(accountIds.map(async (id) => {
+    const res = await graphApiFetch<{ data: Array<any> }>(`/${id}/insights`, {
+      level: "adset", time_range, limit: "500",
+      fields: "campaign_name,adset_name,spend,reach,clicks,ctr,cpc,frequency",
+    });
+    for (const r of res.data || []) {
+      if (campaignSlug && !campaignMatchesSlug(r.campaign_name, variants, strictSales)) continue;
+      rows.push({
+        campaign: r.campaign_name || "—", name: r.adset_name || "—",
+        spend: parseFloat(r.spend) || 0, reach: parseInt(r.reach) || 0, clicks: parseInt(r.clicks) || 0,
+        ctr: parseFloat(r.ctr) || 0, cpc: parseFloat(r.cpc) || 0, frequency: parseFloat(r.frequency) || 0,
+      });
+    }
+  }));
+  return rows.sort((a, b) => b.spend - a.spend);
+}
+
+/** Insights por ANÚNCIO/CRIATIVO (top por gasto). */
+export async function fetchAdBreakdown(
+  accountIds: string[], startDate?: Date, endDate?: Date, dateRange = "30d", campaignSlug?: string, strictSales = false
+): Promise<AdRow[]> {
+  const time_range = rangeParam(startDate, endDate, dateRange);
+  const variants = campaignSlug ? slugVariants(campaignSlug) : [];
+  const rows: AdRow[] = [];
+  await Promise.all(accountIds.map(async (id) => {
+    const res = await graphApiFetch<{ data: Array<any> }>(`/${id}/insights`, {
+      level: "ad", time_range, limit: "500",
+      fields: "ad_name,campaign_name,spend,impressions,clicks,ctr",
+    });
+    for (const r of res.data || []) {
+      if (campaignSlug && !campaignMatchesSlug(r.campaign_name, variants, strictSales)) continue;
+      rows.push({
+        name: r.ad_name || "—", campaign: r.campaign_name || "—",
+        spend: parseFloat(r.spend) || 0, impressions: parseInt(r.impressions) || 0,
+        clicks: parseInt(r.clicks) || 0, ctr: parseFloat(r.ctr) || 0,
+      });
+    }
+  }));
+  return rows.sort((a, b) => b.spend - a.spend).slice(0, 50);
+}
+
 /** Fetch the sum of daily budgets for active campaigns matching a slug.
  *  Checks campaign-level daily_budget first, then falls back to adset-level budgets. */
 export async function fetchCampaignDailyBudget(
