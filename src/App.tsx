@@ -17,6 +17,7 @@ import Agentes from "./pages/Agentes";
 import Chat from "./pages/Chat";
 import Workflow from "./pages/Workflow";
 import Designer from "./pages/Designer";
+import Modulos from "./pages/Modulos";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,6 +43,7 @@ const App = () => (
           <Route path="/chat" element={<Chat />} />
           <Route path="/workflow" element={<Workflow />} />
           <Route path="/designer" element={<Designer />} />
+          <Route path="/modulos" element={<Modulos />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -20,7 +20,9 @@ import {
   MessageSquare,
   KanbanSquare,
   Palette,
+  LayoutGrid,
 } from "lucide-react";
+import { useModulos } from "@/hooks/useModulos";
 import { NavLink } from "@/components/NavLink";
 import {
   Sidebar,
@@ -70,6 +72,7 @@ export function AppSidebar() {
 
   // Seção "Configurações" começa minimizada; abre apenas ao clicar.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const modulos = useModulos();
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
@@ -93,6 +96,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="px-2 py-4">
+        {modulos.eventos && (
         <SidebarGroup>
           <SidebarGroupLabel className="text-xs uppercase tracking-wider text-sidebar-foreground/50 px-3 mb-1">
             Eventos
@@ -117,7 +121,9 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        )}
 
+        {modulos.inside && (
         <SidebarGroup>
           <SidebarGroupLabel className="text-xs uppercase tracking-wider text-sidebar-foreground/50 px-3 mb-1">
             Inside Sales
@@ -142,7 +148,9 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        )}
 
+        {modulos.analytics && (
         <SidebarGroup>
           <SidebarGroupLabel className="text-xs uppercase tracking-wider text-sidebar-foreground/50 px-3 mb-1">
             Analytics
@@ -167,7 +175,9 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        )}
 
+        {modulos.growth && (
         <SidebarGroup>
           <SidebarGroupLabel className="text-xs uppercase tracking-wider text-sidebar-foreground/50 px-3 mb-1">
             Growth
@@ -192,6 +202,7 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-3 space-y-1">
@@ -208,6 +219,19 @@ export function AppSidebar() {
         </button>
         {settingsOpen && (
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Módulos">
+              <NavLink
+                to="/modulos"
+                end
+                className="hover:bg-sidebar-accent/80"
+                activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
+              >
+                <LayoutGrid className="h-4 w-4" />
+                <span>Módulos</span>
+              </NavLink>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Integrações">
               <NavLink
