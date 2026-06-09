@@ -245,6 +245,7 @@
   gap: 1.5rem;
 }
 .tv-mode.tv-3x1 .tv-pay .flex.items-center > * { width: 100% !important; }
-.tv-mode.tv-3x1 .tv-pay [class*="h-[300px]"] { height: 40vh !important; }
+/* donut = 1º filho do flex; altura fixa (Recharts precisa) — mira por estrutura, não por classe arbitrária */
+.tv-mode.tv-3x1 .tv-pay .flex.items-center > div:first-child { height: 42vh !important; min-height: 280px; }
 
 
