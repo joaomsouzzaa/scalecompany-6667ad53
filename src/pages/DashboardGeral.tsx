@@ -274,7 +274,7 @@ const DashboardGeral = () => {
                 Nenhuma cidade ativa. Cadastre cidades em Configurações → Cadastro de Cidades.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {visibleCidades.map((cidade) => {
                   const kpi = cityKpis.get(cidade.slug) || {
                     participantes: 0,
@@ -286,50 +286,50 @@ const DashboardGeral = () => {
 
                   return (
                     <Card key={cidade.id} className="animate-fade-in">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-lg">{cidade.nome}</CardTitle>
-                        <p className="text-xs text-muted-foreground">
+                      <CardHeader className="pb-1 pt-3 px-4">
+                        <CardTitle className="text-base">{cidade.nome}</CardTitle>
+                        <p className="text-[11px] text-muted-foreground">
                           Evento: {new Date(cidade.data_evento).toLocaleDateString("pt-BR")}
                         </p>
                       </CardHeader>
-                      <CardContent>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                      <CardContent className="px-4 pb-3 pt-0">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="flex items-center gap-2 p-1.5 rounded-md bg-muted/50">
                             <Target className="h-4 w-4 text-primary shrink-0" />
                             <div>
-                              <p className="text-xs text-muted-foreground">CAC Participante</p>
+                              <p className="text-[10px] leading-tight text-muted-foreground">CAC Participante</p>
                               <p className="text-sm font-bold">
                                 {kpi.cacParticipante > 0 ? fmt(kpi.cacParticipante) : "—"}
                               </p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                          <div className="flex items-center gap-2 p-1.5 rounded-md bg-muted/50">
                             <Users className="h-4 w-4 text-primary shrink-0" />
                             <div>
-                              <p className="text-xs text-muted-foreground">Participantes</p>
+                              <p className="text-[10px] leading-tight text-muted-foreground">Participantes</p>
                               <p className="text-sm font-bold">{kpi.participantes}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                          <div className="flex items-center gap-2 p-1.5 rounded-md bg-muted/50">
                             <Crown className="h-4 w-4 text-primary shrink-0" />
                             <div>
-                              <p className="text-xs text-muted-foreground">Total VIPs</p>
+                              <p className="text-[10px] leading-tight text-muted-foreground">Total VIPs</p>
                               <p className="text-sm font-bold">{kpi.totalVips}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                          <div className="flex items-center gap-2 p-1.5 rounded-md bg-muted/50">
                             <BarChart3 className="h-4 w-4 text-primary shrink-0" />
                             <div>
-                              <p className="text-xs text-muted-foreground">Projeção</p>
+                              <p className="text-[10px] leading-tight text-muted-foreground">Projeção</p>
                               <p className="text-sm font-bold">
                                 {kpi.projecao !== null ? kpi.projecao : "—"}
                               </p>
                             </div>
                           </div>
-                          <div className="col-span-2 flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                          <div className="col-span-2 flex items-center gap-2 p-1.5 rounded-md bg-muted/50">
                             <Banknote className="h-4 w-4 text-primary shrink-0" />
                             <div>
-                              <p className="text-xs text-muted-foreground">Bilheteria (+/-)</p>
+                              <p className="text-[10px] leading-tight text-muted-foreground">Bilheteria (+/-)</p>
                               {(() => {
                                 const spend = metaSpendMap.get(cidade.slug) || 0;
                                 const diff = kpi.bilheteria - spend;
