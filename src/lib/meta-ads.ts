@@ -616,6 +616,10 @@ export async function fetchBreakdown(
 ): Promise<BreakdownRow[]> {
   const time_range = rangeParam(startDate, endDate, dateRange);
   const variants = campaignSlug ? slugVariants(campaignSlug) : [];
+  // Cache em memória (10 min) — deixa a rotação do Modo TV instantânea ao reusar a cidade.
+  const cacheKey = `bd_${accountIds.join(",")}_${breakdown}_${keyField || ""}_${time_range}_${campaignSlug || "all"}_${strictSales}`;
+  const cached = _spendCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < SPEND_CACHE_TTL) return cached.data as BreakdownRow[];
   // Alguns breakdowns só funcionam combinados (ex.: publisher_platform,platform_position).
   // keyField define por qual campo agregar (default = o próprio breakdown).
   const kf = keyField || breakdown;
@@ -636,8 +640,10 @@ export async function fetchBreakdown(
       map.set(key, cur);
     }
   }));
-  return Array.from(map.entries()).map(([label, v]) => ({ label, ...v }))
+  const out = Array.from(map.entries()).map(([label, v]) => ({ label, ...v }))
     .sort((a, b) => (b.purchases - a.purchases) || (b.spend - a.spend));
+  _spendCache.set(cacheKey, { data: out, ts: Date.now() });
+  return out;
 }
 
 /** Fetch the sum of daily budgets for active campaigns matching a slug.

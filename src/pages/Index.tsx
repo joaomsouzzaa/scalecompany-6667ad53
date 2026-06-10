@@ -28,7 +28,7 @@ import { DashboardFilters } from "@/components/DashboardFilters";
 import { SalesChart } from "@/components/SalesChart";
 import { PaymentMethodChart } from "@/components/PaymentMethodChart";
 import { fmt, type Filters } from "@/lib/mockData";
-import { fetchAdAccounts, fetchAdSpend, fetchCampaignDailyBudget, fetchDailySpendBreakdown, syncMetaTokenToServer } from "@/lib/meta-ads";
+import { fetchAdAccounts, fetchAdSpend, fetchCampaignDailyBudget, fetchDailySpendBreakdown, fetchBreakdown, syncMetaTokenToServer } from "@/lib/meta-ads";
 import { useVendasData } from "@/hooks/useVendasData";
 import { useCidades } from "@/hooks/useCidades";
 import { getHiddenCidades } from "@/components/EditCidadeDialog";
@@ -192,6 +192,41 @@ const Index = () => {
   useEffect(() => { activeCidadesRef.current = activeCidades; });
   useEffect(() => { filtersRef.current = filters; });
   useEffect(() => { handleFiltersChangeRef.current = handleFiltersChange; });
+
+  // Pré-carrega os dados (spend, daily, breakdowns) de TODAS as cidades ativas.
+  // Aquece os caches (10 min) p/ a rotação do TV ser instantânea — só anima e mostra
+  // a última leitura, sem esperar nova chamada. Roda ao entrar no TV e a cada 10 min.
+  const prefetchTvData = useCallback(async () => {
+    if (!isMetaConnected) return;
+    try {
+      const accountIds = filtersRef.current.adAccount !== "all"
+        ? [filtersRef.current.adAccount]
+        : (await fetchAdAccounts()).map((a) => a.id);
+      if (accountIds.length === 0) return;
+      const { startDate: sd, endDate: ed, dateRange: dr } = filtersRef.current;
+      for (const c of activeCidadesRef.current) {
+        const slug = c.slug;
+        await Promise.allSettled([
+          fetchAdSpend(accountIds, dr, sd, ed, slug, true),
+          fetchDailySpendBreakdown(accountIds, dr, sd, ed, slug, true),
+          fetchCampaignDailyBudget(accountIds, slug, true),
+          fetchBreakdown(accountIds, "gender", sd, ed, dr, slug, true),
+          fetchBreakdown(accountIds, "age", sd, ed, dr, slug, true),
+          fetchBreakdown(accountIds, "impression_device", sd, ed, dr, slug, true),
+          fetchBreakdown(accountIds, "publisher_platform", sd, ed, dr, slug, true),
+          fetchBreakdown(accountIds, "device_platform", sd, ed, dr, slug, true),
+          fetchBreakdown(accountIds, "publisher_platform,platform_position", sd, ed, dr, slug, true, "platform_position"),
+        ]);
+      }
+    } catch { /* best-effort */ }
+  }, [isMetaConnected]);
+
+  useEffect(() => {
+    if (!tvMode) return;
+    prefetchTvData();
+    const id = setInterval(prefetchTvData, 10 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [tvMode, prefetchTvData]);
 
   useEffect(() => {
     if (!tvMode) return;

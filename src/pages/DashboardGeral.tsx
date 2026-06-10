@@ -82,7 +82,7 @@ const DashboardGeral = () => {
   const [startDate, setStartDate] = useState<Date | undefined>(() => { const s = new Date(); s.setDate(s.getDate() - 89); return s; });
   const [endDate, setEndDate] = useState<Date | undefined>(() => new Date());
 
-  const { data: cidades = [] } = useCidades();
+  const { data: cidades = [], isLoading: loadingCidades } = useCidades();
   const hiddenCidades = getHiddenCidades();
   const now = new Date();
   const visibleCidades = cidades.filter((c) => !hiddenCidades.includes(c.id) && new Date(c.data_evento) >= new Date(now.getFullYear(), now.getMonth(), now.getDate()));
@@ -112,6 +112,9 @@ const DashboardGeral = () => {
   const [metaSpendMap, setMetaSpendMap] = useState<Map<string, number>>(new Map());
   const [projecaoMap, setProjecaoMap] = useState<Map<string, number | null>>(new Map());
   const [loadingMeta, setLoadingMeta] = useState<boolean>(isMetaConnected);
+  // Assinatura do filtro a que os mapas do Meta pertencem (evita mostrar dado antigo no F5/troca de período).
+  const metaSig = `${dateRange}|${startDate?.toISOString() || ""}|${endDate?.toISOString() || ""}`;
+  const [metaFor, setMetaFor] = useState("");
   // Auto-refresh do Meta a cada 10 min (mesmo sem F5).
   const [metaTick, setMetaTick] = useState(0);
   useEffect(() => {
@@ -121,7 +124,9 @@ const DashboardGeral = () => {
 
   // Fetch Meta spend per city
   useEffect(() => {
-    if (!isMetaConnected || visibleCidades.length === 0) { setLoadingMeta(false); return; }
+    if (!isMetaConnected) { setLoadingMeta(false); return; }
+    if (loadingCidades) { setLoadingMeta(true); return; } // espera as cidades carregarem (não some o "Carregando")
+    if (visibleCidades.length === 0) { setLoadingMeta(false); return; }
     setLoadingMeta(true);
 
     const fetchSpend = async () => {
@@ -152,6 +157,7 @@ const DashboardGeral = () => {
 
         setMetaSpendMap(spendMap);
         setProjecaoMap(projMap);
+        setMetaFor(metaSig); // mapas agora correspondem ao filtro atual
       } catch {
         // ignore
       } finally {
@@ -160,7 +166,10 @@ const DashboardGeral = () => {
     };
 
     fetchSpend();
-  }, [isMetaConnected, visibleCidades.length, dateRange, startDate, endDate, metaTick]);
+  }, [isMetaConnected, loadingCidades, visibleCidades.length, dateRange, startDate, endDate, metaTick]);
+
+  // "Carregando..." até os dados do Meta corresponderem ao filtro atual (não pisca dado antigo).
+  const carregandoMeta = isLoading || loadingCidades || loadingMeta || (isMetaConnected && metaFor !== metaSig);
 
   // Calculate KPIs per city
   const cityKpis = useMemo(() => {
@@ -291,7 +300,7 @@ const DashboardGeral = () => {
                             <div>
                               <p className="text-[10px] leading-tight text-muted-foreground">CAC Participante</p>
                               <p className="text-sm font-bold">
-                                {(isLoading || loadingMeta) ? "Carregando..." : (kpi.cacParticipante > 0 ? fmt(kpi.cacParticipante) : "—")}
+                                {carregandoMeta ? "Carregando..." : (kpi.cacParticipante > 0 ? fmt(kpi.cacParticipante) : "—")}
                               </p>
                             </div>
                           </div>
@@ -314,7 +323,7 @@ const DashboardGeral = () => {
                             <div>
                               <p className="text-[10px] leading-tight text-muted-foreground">Projeção</p>
                               <p className="text-sm font-bold">
-                                {(isLoading || loadingMeta) ? "Carregando..." : (kpi.projecao !== null ? kpi.projecao : "—")}
+                                {carregandoMeta ? "Carregando..." : (kpi.projecao !== null ? kpi.projecao : "—")}
                               </p>
                             </div>
                           </div>
@@ -322,7 +331,7 @@ const DashboardGeral = () => {
                             <Banknote className="h-4 w-4 text-primary shrink-0" />
                             <div>
                               <p className="text-[10px] leading-tight text-muted-foreground">Bilheteria (+/-)</p>
-                              {(isLoading || loadingMeta) ? (
+                              {carregandoMeta ? (
                                 <p className="text-sm font-bold">Carregando...</p>
                               ) : (() => {
                                 const spend = metaSpendMap.get(cidade.slug) || 0;
