@@ -242,11 +242,21 @@ async function resumoCidade(supabase: any, cidadeSlug: string | null) {
   };
 }
 
+// Data de hoje (YYYY-MM-DD) em horário de São Paulo.
+function hojeSPstr(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+// Cidade ATIVA = evento de hoje em diante. Compara só a data (YYYY-MM-DD) para
+// evitar erros de fuso. Sem data_evento => não bloqueia (legado).
+function eventoAtivo(dataEvento: string | null): boolean {
+  if (!dataEvento) return true;
+  return String(dataEvento).slice(0, 10) >= hojeSPstr();
+}
+
 // Resumo consolidado de todas as cidades ativas (gatilho resumo_geral).
 async function resumoGeral(supabase: any): Promise<Record<string, string | number>> {
-  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const { data: cids } = await supabase.from("cidades").select("slug,data_evento");
-  const ativas = (cids || []).filter((c: any) => new Date(c.data_evento) >= hoje);
+  const ativas = (cids || []).filter((c: any) => eventoAtivo(c.data_evento));
   let participantes = 0, bilheteria = 0, investimento = 0;
   for (const c of ativas) {
     const r = await resumoCidade(supabase, c.slug);
@@ -267,11 +277,23 @@ async function resumoGeral(supabase: any): Promise<Record<string, string | numbe
 // Slugs a processar: 1 por cidade ATIVA (evento >= hoje) quando "todas",
 // senão a cidade específica da notificação.
 async function slugsDaNotif(supabase: any, n: any): Promise<(string | null)[]> {
+  const { data: cids } = await supabase.from("cidades").select("slug,data_evento");
+  const lista = (cids || []) as any[];
+
+  // "Todas as cidades": só as ATIVAS (evento de hoje em diante).
   if ((n.gatilho === "resumo_cidade" || n.gatilho === "manual") && !n.cidade_slug) {
-    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-    const { data: cids } = await supabase.from("cidades").select("slug,data_evento");
-    return (cids || []).filter((c: any) => new Date(c.data_evento) >= hoje).map((c: any) => c.slug);
+    return lista.filter((c) => eventoAtivo(c.data_evento)).map((c) => c.slug);
   }
+
+  // Cidade específica: NUNCA envia se o evento já passou (cidade inativa).
+  const norm = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s-]/g, "");
+  const parts = String(n.cidade_slug || "").split(",").map((p: string) => norm(p)).filter(Boolean);
+  const cidade = lista.find((c) => {
+    const cs = norm(c.slug);
+    return parts.some((p) => p === cs || cs.includes(p) || p.includes(cs));
+  });
+  // Se a cidade está cadastrada e o evento passou, bloqueia. Sem match => legado (envia).
+  if (cidade && !eventoAtivo(cidade.data_evento)) return [];
   return [n.cidade_slug || null];
 }
 
