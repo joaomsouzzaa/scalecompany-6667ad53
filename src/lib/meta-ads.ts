@@ -531,14 +531,15 @@ export interface AdRow {
   adId?: string; thumbnail?: string;
 }
 
-// Thumbnail do criativo do anúncio (imagem do estático ou preview do vídeo).
-// Pede uma thumbnail GRANDE (thumbnail_width/height) p/ não ficar pixelada; usa a
-// imagem cheia (image_url) quando disponível (estáticos).
+// Thumbnail do criativo do anúncio em boa resolução: imagem cheia do estático
+// (image_url) ou a imagem do vídeo (object_story_spec.video_data.image_url, que é
+// grande); cai no thumbnail_url só como último recurso.
 async function fetchAdThumbnail(adId: string): Promise<string | undefined> {
   try {
-    const r = await graphApiFetch<{ creative?: { thumbnail_url?: string; image_url?: string } }>(
-      `/${adId}`, { fields: "creative{thumbnail_url,image_url}", thumbnail_width: "1080", thumbnail_height: "1080" });
-    return r.creative?.image_url || r.creative?.thumbnail_url;
+    const r = await graphApiFetch<{ creative?: { image_url?: string; thumbnail_url?: string; object_story_spec?: { video_data?: { image_url?: string } } } }>(
+      `/${adId}`, { fields: "creative{image_url,thumbnail_url,object_story_spec{video_data{image_url}}}" });
+    const c = r.creative || {};
+    return c.image_url || c.object_story_spec?.video_data?.image_url || c.thumbnail_url;
   } catch { return undefined; }
 }
 

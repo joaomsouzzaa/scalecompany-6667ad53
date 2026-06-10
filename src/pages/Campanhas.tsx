@@ -13,7 +13,7 @@ import {
   fetchAdAccounts, fetchCampaignBreakdown, fetchAdSetBreakdown, fetchAdBreakdown,
   hydrateMetaTokenFromServer, isTokenExpired, type CampaignRow,
 } from "@/lib/meta-ads";
-import { BarChart3, Trophy, AlertTriangle, Bookmark, TrendingUp, Image as ImageIcon, Lightbulb, Sparkles, ShoppingCart, Target } from "lucide-react";
+import { BarChart3, Trophy, AlertTriangle, Bookmark, TrendingUp, Image as ImageIcon, Lightbulb, Sparkles, ShoppingCart, Target, Loader2 } from "lucide-react";
 
 const fmtBRL = (n: number) => `R$ ${(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtNum = (n: number) => (n || 0).toLocaleString("pt-BR");
@@ -71,7 +71,7 @@ export default function Campanhas() {
     queryKey: ["adsets", ...qk], enabled, placeholderData: (p) => p,
     queryFn: async () => fetchAdSetBreakdown(await getAccountIds(), filters.startDate, filters.endDate, filters.dateRange, slug, true),
   });
-  const { data: ads = [] } = useQuery({
+  const { data: ads = [], isFetching: loadingAds } = useQuery({
     queryKey: ["ads", ...qk], enabled, placeholderData: (p) => p,
     queryFn: async () => fetchAdBreakdown(await getAccountIds(), filters.startDate, filters.endDate, filters.dateRange, slug, true),
   });
@@ -250,7 +250,9 @@ export default function Campanhas() {
                     </button>
                   </div>
                 </div>
-                {topCriativos.length === 0 ? (
+                {topCriativos.length === 0 && loadingAds ? (
+                  <Card><CardContent className="py-10 flex flex-col items-center justify-center gap-2 text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" /> Carregando...</CardContent></Card>
+                ) : topCriativos.length === 0 ? (
                   <Card><CardContent className="py-8 text-center text-muted-foreground">Nenhum criativo.</CardContent></Card>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
