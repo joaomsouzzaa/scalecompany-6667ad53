@@ -27,11 +27,18 @@ const PRETTY: Record<string, string> = {
   android_tablet: "Android Tablet", facebook: "Facebook", instagram: "Instagram",
   audience_network: "Audience Network", messenger: "Messenger", mobile_app: "App Mobile",
   mobile_web: "Web Mobile", "unknown": "Desconhecido",
+  // Posições
+  feed: "Feed", instagram_stories: "Stories (IG)", facebook_stories: "Stories (FB)",
+  instagram_reels: "Reels (IG)", facebook_reels: "Reels (FB)", instream_video: "Vídeo In-stream",
+  right_hand_column: "Coluna Direita", marketplace: "Marketplace", search: "Busca",
+  story: "Stories", instant_article: "Instant Article", an_classic: "Audience Network",
+  // device_platform
+  mobile: "Mobile",
 };
 const lbl = (s: string) => GENERO[s] || PRETTY[s] || s;
 
-function BreakCard({ title, rows, type }: { title: string; rows: BreakdownRow[]; type: "pie" | "bar" }) {
-  const data = rows.map((r) => ({ name: lbl(r.label), value: r.purchases })).filter((d) => d.value > 0);
+function BreakCard({ title, rows, type, max }: { title: string; rows: BreakdownRow[]; type: "pie" | "bar"; max?: number }) {
+  const data = rows.map((r) => ({ name: lbl(r.label), value: r.purchases })).filter((d) => d.value > 0).slice(0, max ?? 99);
   return (
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-base">{title}</CardTitle></CardHeader>
@@ -117,6 +124,9 @@ export default function Performance() {
   const { data: bdIdade = [] } = useQuery(bq("age"));
   const { data: bdDispositivo = [] } = useQuery(bq("impression_device"));
   const { data: bdPlataforma = [] } = useQuery(bq("publisher_platform"));
+  const { data: bdPosicao = [] } = useQuery(bq("platform_position"));
+  const { data: bdMobileDesktop = [] } = useQuery(bq("device_platform"));
+  const { data: bdRegiao = [] } = useQuery(bq("region"));
 
   const chartData = daily.map((d) => ({
     name: new Date(d.date + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
@@ -244,6 +254,9 @@ export default function Performance() {
                   <BreakCard title="Faixa Etária" rows={bdIdade} type="bar" />
                   <BreakCard title="Dispositivo" rows={bdDispositivo} type="bar" />
                   <BreakCard title="Plataforma" rows={bdPlataforma} type="pie" />
+                  <BreakCard title="Posição" rows={bdPosicao} type="bar" max={8} />
+                  <BreakCard title="Mobile vs Desktop" rows={bdMobileDesktop} type="pie" />
+                  <BreakCard title="Região / Estado" rows={bdRegiao} type="bar" max={8} />
                 </div>
 
                 <Card>
