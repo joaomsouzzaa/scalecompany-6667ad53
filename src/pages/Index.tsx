@@ -20,6 +20,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { BreakdownCharts } from "@/components/BreakdownCharts";
 import { toast } from "sonner";
 
 import { KpiCard } from "@/components/KpiCard";
@@ -79,6 +80,10 @@ const Index = () => {
   const isMetaConnected = localStorage.getItem("meta_connected") === "true";
 
   const selectedCidade = cidades.find((c) => c.slug === filters.city);
+
+  // Para os gráficos de público/dispositivos (Meta breakdowns)
+  const getAccountIds = async () => filters.adAccount !== "all" ? [filters.adAccount] : (await fetchAdAccounts()).map((a) => a.id);
+  const breakdownSlug = filters.city !== "all" ? selectedCidade?.slug : undefined;
 
   // TV Mode: fullscreen + rotate through active cities every 20s
   const [tvMode, setTvMode] = useState(false);
@@ -491,6 +496,18 @@ const Index = () => {
             </div>
             </div>
             {/* fim dos KPIs (kpisRef) */}
+
+            {/* Público & Dispositivos (Meta) — só fora do modo TV */}
+            {!tvMode && isMetaConnected && (
+              <BreakdownCharts
+                enabled={isMetaConnected}
+                getAccountIds={getAccountIds}
+                startDate={filters.startDate}
+                endDate={filters.endDate}
+                dateRange={filters.dateRange}
+                slug={breakdownSlug}
+              />
+            )}
 
             {/* Charts */}
             <div className={tvMode ? "tv-charts" : "space-y-6"}>
