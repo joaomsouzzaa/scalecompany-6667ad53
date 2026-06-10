@@ -21,6 +21,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useBreakdownData, BreakCard } from "@/components/BreakdownCharts";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { KpiCard } from "@/components/KpiCard";
@@ -28,7 +29,7 @@ import { DashboardFilters } from "@/components/DashboardFilters";
 import { SalesChart } from "@/components/SalesChart";
 import { PaymentMethodChart } from "@/components/PaymentMethodChart";
 import { fmt, type Filters } from "@/lib/mockData";
-import { fetchAdAccounts, fetchAdSpend, fetchCampaignDailyBudget, fetchDailySpendBreakdown, fetchBreakdown, syncMetaTokenToServer } from "@/lib/meta-ads";
+import { fetchAdAccounts, fetchAdSpend, fetchCampaignDailyBudget, fetchDailySpendBreakdown, warmBreakdownsForCities, syncMetaTokenToServer } from "@/lib/meta-ads";
 import { useVendasData } from "@/hooks/useVendasData";
 import { useCidades } from "@/hooks/useCidades";
 import { getHiddenCidades } from "@/components/EditCidadeDialog";
@@ -68,6 +69,7 @@ const Index = () => {
     setFilters(newFilters);
   };
 
+  const queryClient = useQueryClient();
   const [metaInvestimento, setMetaInvestimento] = useState<number | null>(null);
   const [loadingSpend, setLoadingSpend] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -204,26 +206,28 @@ const Index = () => {
         : (await fetchAdAccounts()).map((a) => a.id);
       if (accountIds.length === 0) return;
       const { startDate: sd, endDate: ed, dateRange: dr } = filtersRef.current;
-      // Sequencial (uma chamada por vez) p/ NÃO estourar o rate limit do Meta — o que
-      // antes deixava algumas cidades sem carregar. Cada resultado fica no cache (10 min).
-      const tarefas = (slug: string) => [
-        () => fetchAdSpend(accountIds, dr, sd, ed, slug, true),
-        () => fetchDailySpendBreakdown(accountIds, dr, sd, ed, slug, true),
-        () => fetchCampaignDailyBudget(accountIds, slug, true),
-        () => fetchBreakdown(accountIds, "gender", sd, ed, dr, slug, true),
-        () => fetchBreakdown(accountIds, "age", sd, ed, dr, slug, true),
-        () => fetchBreakdown(accountIds, "impression_device", sd, ed, dr, slug, true),
-        () => fetchBreakdown(accountIds, "publisher_platform", sd, ed, dr, slug, true),
-        () => fetchBreakdown(accountIds, "device_platform", sd, ed, dr, slug, true),
-        () => fetchBreakdown(accountIds, "publisher_platform,platform_position", sd, ed, dr, slug, true, "platform_position"),
-      ];
-      for (const c of activeCidadesRef.current) {
-        for (const run of tarefas(c.slug)) {
+      const cidades = activeCidadesRef.current;
+      // Breakdowns: 1 chamada por tipo para TODAS as cidades (6 no total) — não estoura o rate limit.
+      try {
+        await warmBreakdownsForCities(accountIds, cidades, sd, ed, dr);
+        // Cache aquecido: re-busca as queries (pega do cache, instantâneo) caso já tenham
+        // vindo vazias durante um cooldown anterior.
+        queryClient.invalidateQueries({ queryKey: ["bd"] });
+      } catch { /* segue */ }
+      // Spend/daily/budget por cidade, sequencial (chamadas leves, sem rajada).
+      for (const c of cidades) {
+        for (const run of [
+          () => fetchAdSpend(accountIds, dr, sd, ed, c.slug, true),
+          () => fetchDailySpendBreakdown(accountIds, dr, sd, ed, c.slug, true),
+          () => fetchCampaignDailyBudget(accountIds, c.slug, true),
+        ]) {
           try { await run(); } catch { /* segue p/ a próxima */ }
         }
       }
+      // Atualiza o investimento da cidade atual com o cache aquecido (limpa "Carregando...").
+      setRefreshKey((k) => k + 1);
     } catch { /* best-effort */ }
-  }, [isMetaConnected]);
+  }, [isMetaConnected, queryClient]);
 
   useEffect(() => {
     if (!tvMode) return;

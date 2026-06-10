@@ -646,6 +646,55 @@ export async function fetchBreakdown(
   return out;
 }
 
+// Os 6 breakdowns usados nos gráficos pizza/barra.
+const BREAKDOWN_DEFS: Array<{ breakdown: string; keyField?: string }> = [
+  { breakdown: "gender" }, { breakdown: "age" }, { breakdown: "impression_device" },
+  { breakdown: "publisher_platform" }, { breakdown: "device_platform" },
+  { breakdown: "publisher_platform,platform_position", keyField: "platform_position" },
+];
+
+/** Aquece o cache dos 6 breakdowns para VÁRIAS cidades com apenas 1 chamada por tipo
+ *  (em vez de 1 por cidade) — evita estourar o rate limit do Meta no Modo TV.
+ *  Busca todas as campanhas uma vez e separa por cidade em memória, gravando no MESMO
+ *  cache que fetchBreakdown(slug, strictSales=true) lê. */
+export async function warmBreakdownsForCities(
+  accountIds: string[], cities: Array<{ slug: string }>, startDate?: Date, endDate?: Date, dateRange = "30d"
+): Promise<void> {
+  const time_range = rangeParam(startDate, endDate, dateRange);
+  for (const def of BREAKDOWN_DEFS) {
+    const { breakdown, keyField } = def;
+    const kf = keyField || breakdown;
+    // 1 chamada (paginada) por conta, TODAS as campanhas.
+    const allRows: any[] = [];
+    for (const id of accountIds) {
+      const rows = await graphApiFetchAll(`/${id}/insights`, {
+        level: "campaign", breakdowns: breakdown,
+        fields: "campaign_name,spend,impressions,clicks,actions", time_range, limit: "500",
+      });
+      allRows.push(...rows);
+    }
+    // Separa/agrega por cidade e grava no cache de fetchBreakdown.
+    for (const c of cities) {
+      const variants = slugVariants(c.slug);
+      const map = new Map<string, { spend: number; impressions: number; clicks: number; purchases: number }>();
+      for (const r of allRows) {
+        if (!campaignMatchesSlug(r.campaign_name, variants, true)) continue;
+        const key = String(r[kf] ?? "—");
+        const cur = map.get(key) || { spend: 0, impressions: 0, clicks: 0, purchases: 0 };
+        cur.spend += parseFloat(r.spend) || 0;
+        cur.impressions += parseInt(r.impressions) || 0;
+        cur.clicks += parseInt(r.clicks) || 0;
+        cur.purchases += pickAction(r.actions, ["omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase"]);
+        map.set(key, cur);
+      }
+      const out = Array.from(map.entries()).map(([label, v]) => ({ label, ...v }))
+        .sort((a, b) => (b.purchases - a.purchases) || (b.spend - a.spend));
+      const cacheKey = `bd_${accountIds.join(",")}_${breakdown}_${keyField || ""}_${time_range}_${c.slug}_true`;
+      _spendCache.set(cacheKey, { data: out, ts: Date.now() });
+    }
+  }
+}
+
 /** Fetch the sum of daily budgets for active campaigns matching a slug.
  *  Checks campaign-level daily_budget first, then falls back to adset-level budgets. */
 export async function fetchCampaignDailyBudget(
