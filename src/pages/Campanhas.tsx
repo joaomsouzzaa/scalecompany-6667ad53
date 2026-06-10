@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DashboardFilters } from "@/components/DashboardFilters";
 import { useCidades } from "@/hooks/useCidades";
+import { getHiddenCidades } from "@/components/EditCidadeDialog";
 import type { Filters } from "@/lib/mockData";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -44,7 +45,14 @@ export default function Campanhas() {
 
   const { data: cidades = [] } = useCidades();
   const selectedCidade = cidades.find((c) => c.slug === filters.city);
-  const slug = filters.city !== "all" ? selectedCidade?.slug : undefined;
+  // Cidades ativas (evento de hoje em diante, não ocultas).
+  const hojeC = new Date(); hojeC.setHours(0, 0, 0, 0);
+  const hidden = getHiddenCidades();
+  const activeCidades = cidades.filter((c) => !hidden.includes(c.id) && (!c.data_evento || new Date(c.data_evento) >= hojeC));
+  // "Todas as cidades" = agrega APENAS as cidades ativas (não a conta inteira).
+  const slug = filters.city !== "all"
+    ? selectedCidade?.slug
+    : (activeCidades.map((c) => c.slug).join(",") || undefined);
 
   useEffect(() => { (async () => { if (await hydrateMetaTokenFromServer()) setMetaConnected(true); })(); }, []);
   const enabled = metaConnected && !isTokenExpired();
