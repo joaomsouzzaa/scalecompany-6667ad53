@@ -402,6 +402,18 @@ function sumAction(actions: Array<{ action_type: string; value: string }> | unde
   return t;
 }
 
+// Para eventos que o Meta reporta em MÚLTIPLOS aliases (ex.: purchase / omni_purchase /
+// offsite_conversion.fb_pixel_purchase = a MESMA compra). Pega só o 1º presente na ordem
+// de prioridade — evita contar a mesma venda 2-3x.
+function pickAction(actions: Array<{ action_type: string; value: string }> | undefined, typesByPriority: string[]): number {
+  if (!actions) return 0;
+  for (const t of typesByPriority) {
+    const found = actions.find((a) => a.action_type === t);
+    if (found) return parseFloat(found.value) || 0;
+  }
+  return 0;
+}
+
 /** KPIs agregados da conta (Resumo Executivo da Performance). Filtra por cidade (slug) se informado. */
 export async function fetchAccountInsights(
   accountIds: string[], startDate?: Date, endDate?: Date, dateRange = "30d", campaignSlug?: string, strictSales = false
@@ -419,10 +431,10 @@ export async function fetchAccountInsights(
     agg.linkClicks += parseInt(r.inline_link_clicks) || 0;
     agg.reach += parseInt(r.reach) || 0;
     agg.pageViews += sumAction(r.actions, ["landing_page_view"]);
-    agg.checkouts += sumAction(r.actions, ["initiate_checkout", "omni_initiated_checkout", "offsite_conversion.fb_pixel_initiate_checkout"]);
-    agg.purchases += sumAction(r.actions, ["purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase"]);
-    agg.dms += sumAction(r.actions, ["onsite_conversion.messaging_conversation_started_7d", "messaging_conversation_started_7d"]);
-    agg.saves += sumAction(r.actions, ["onsite_conversion.post_save", "post_save"]);
+    agg.checkouts += pickAction(r.actions, ["omni_initiated_checkout", "initiate_checkout", "offsite_conversion.fb_pixel_initiate_checkout"]);
+    agg.purchases += pickAction(r.actions, ["omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase"]);
+    agg.dms += pickAction(r.actions, ["onsite_conversion.messaging_conversation_started_7d", "messaging_conversation_started_7d"]);
+    agg.saves += pickAction(r.actions, ["onsite_conversion.post_save", "post_save"]);
     agg.reactions += sumAction(r.actions, ["post_reaction"]);
     agg.comments += sumAction(r.actions, ["comment"]);
     agg.videoViews += sumAction(r.actions, ["video_view"]);
@@ -522,7 +534,7 @@ export async function fetchCampaignBreakdown(
         clicks: parseInt(r.clicks) || 0, ctr: parseFloat(r.ctr) || 0, cpc: parseFloat(r.cpc) || 0, frequency: parseFloat(r.frequency) || 0,
         views: sumAction(r.actions, ["video_view"]),
         reactions: sumAction(r.actions, ["post_reaction"]),
-        saves: sumAction(r.actions, ["onsite_conversion.post_save", "post_save"]),
+        saves: pickAction(r.actions, ["onsite_conversion.post_save", "post_save"]),
         comments: sumAction(r.actions, ["comment"]),
       });
     }
