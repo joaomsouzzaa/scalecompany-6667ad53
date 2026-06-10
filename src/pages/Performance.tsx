@@ -52,7 +52,7 @@ function BreakCard({ title, rows, type, max }: { title: string; rows: BreakdownR
                 <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
                   {data.map((_, i) => <Cell key={i} fill={BR_COLORS[i % BR_COLORS.length]} />)}
                 </Pie>
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} formatter={(v: number) => [`${v} compras`, ""]} />
+                <Tooltip separator="" contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} itemStyle={{ color: "#fff" }} labelStyle={{ color: "#fff", fontWeight: 600 }} formatter={(v: number) => [`${v} compras`, ""]} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
@@ -60,7 +60,7 @@ function BreakCard({ title, rows, type, max }: { title: string; rows: BreakdownR
               <BarChart data={data} layout="vertical" margin={{ left: 10, right: 16 }}>
                 <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={11} allowDecimals={false} />
                 <YAxis type="category" dataKey="name" width={90} stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                <Tooltip cursor={{ fill: "hsl(var(--muted)/0.3)" }} contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} formatter={(v: number) => [`${v} compras`, ""]} />
+                <Tooltip cursor={{ fill: "hsl(var(--muted)/0.3)" }} separator="" contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} itemStyle={{ color: "#fff" }} labelStyle={{ color: "#fff", fontWeight: 600 }} formatter={(v: number) => [`${v} compras`, ""]} />
                 <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                   {data.map((_, i) => <Cell key={i} fill={BR_COLORS[i % BR_COLORS.length]} />)}
                 </Bar>
