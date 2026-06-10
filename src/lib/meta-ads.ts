@@ -621,15 +621,16 @@ export async function fetchAdBreakdown(
       });
     }
   }));
-  // Rankeia por MENOR CAC (criativos com vendas primeiro); sem vendas vêm depois por gasto.
-  const comVendas = rows.filter((r) => r.purchases > 0).sort((a, b) => a.cac - b.cac);
-  const semVendas = rows.filter((r) => r.purchases === 0).sort((a, b) => b.spend - a.spend);
-  const ordered = [...comVendas, ...semVendas].slice(0, 50);
-  // Busca a thumbnail só dos top criativos (evita muitas chamadas / rate limit).
-  await Promise.all(ordered.slice(0, 6).map(async (a) => {
-    if (a.adId) a.thumbnail = await fetchAdThumbnail(a.adId);
-  }));
-  return ordered;
+  const top50 = rows.sort((a, b) => b.spend - a.spend).slice(0, 50);
+  // Busca thumbnail da UNIÃO dos tops dos dois critérios (menor CAC e mais vendas),
+  // pra alternar o ranking no front sem ficar sem imagem. Evita muitas chamadas.
+  const comVendas = top50.filter((r) => r.purchases > 0);
+  const porCac = [...comVendas].sort((a, b) => a.cac - b.cac).slice(0, 4);
+  const porVendas = [...comVendas].sort((a, b) => b.purchases - a.purchases).slice(0, 4);
+  const aThumb = new Map<string, AdRow>();
+  for (const a of [...porCac, ...porVendas, ...top50.slice(0, 3)]) if (a.adId) aThumb.set(a.adId, a);
+  await Promise.all([...aThumb.values()].map(async (a) => { a.thumbnail = await fetchAdThumbnail(a.adId!); }));
+  return top50;
 }
 
 export interface BreakdownRow { label: string; spend: number; impressions: number; clicks: number; purchases: number; }

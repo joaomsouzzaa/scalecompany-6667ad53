@@ -13,7 +13,7 @@ import {
   fetchAdAccounts, fetchCampaignBreakdown, fetchAdSetBreakdown, fetchAdBreakdown,
   hydrateMetaTokenFromServer, isTokenExpired, type CampaignRow,
 } from "@/lib/meta-ads";
-import { BarChart3, Trophy, AlertTriangle, Bookmark, TrendingUp, Image as ImageIcon, Lightbulb, Sparkles } from "lucide-react";
+import { BarChart3, Trophy, AlertTriangle, Bookmark, TrendingUp, Image as ImageIcon, Lightbulb, Sparkles, ShoppingCart, Target } from "lucide-react";
 
 const fmtBRL = (n: number) => `R$ ${(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtNum = (n: number) => (n || 0).toLocaleString("pt-BR");
@@ -43,6 +43,8 @@ export default function Campanhas() {
   });
   // Persiste a cidade (todas as páginas mantêm a última selecionada, inclusive no F5).
   const onFiltersChange = (f: Filters) => { setFilters(f); localStorage.setItem("selected_city", f.city); };
+  // Critério do Top Criativos: menor CAC ou mais vendas.
+  const [creativoRank, setCreativoRank] = useState<"cac" | "vendas">("cac");
 
   const { data: cidades = [] } = useCidades();
   const selectedCidade = cidades.find((c) => c.slug === filters.city);
@@ -117,6 +119,15 @@ export default function Campanhas() {
   const itensInsight = usandoIA
     ? insightsIA.map((i) => { const s = nivelStyle(i.nivel); return { icon: s.icon, cls: s.cls, titulo: i.titulo, texto: i.texto }; })
     : alertas;
+
+  // Top 3 criativos conforme o critério escolhido (menor CAC ou mais vendas).
+  const topCriativos = (() => {
+    const comV = ads.filter((a) => a.purchases > 0);
+    const ordenado = creativoRank === "vendas"
+      ? [...comV].sort((a, b) => (b.purchases - a.purchases) || (a.cac - b.cac))
+      : [...comV].sort((a, b) => a.cac - b.cac);
+    return (ordenado.length ? ordenado : ads).slice(0, 3);
+  })();
 
   return (
     <SidebarProvider>
@@ -217,12 +228,24 @@ export default function Campanhas() {
                 )}
 
                 {/* TOP CRIATIVOS — top 3 em cards, com a thumbnail/imagem do criativo */}
-                <SectionTitle>Top Criativos</SectionTitle>
-                {ads.length === 0 ? (
+                <div className="flex items-center justify-between gap-3 pt-2">
+                  <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Top Criativos</span>
+                  <div className="flex rounded-md border border-border overflow-hidden shrink-0">
+                    <button type="button" onClick={() => setCreativoRank("cac")} title="Menor CAC"
+                      className={`px-2 py-1 flex items-center gap-1 text-xs ${creativoRank === "cac" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60"}`}>
+                      <Target className="h-3.5 w-3.5" /> Menor CAC
+                    </button>
+                    <button type="button" onClick={() => setCreativoRank("vendas")} title="Mais vendas"
+                      className={`px-2 py-1 flex items-center gap-1 text-xs ${creativoRank === "vendas" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60"}`}>
+                      <ShoppingCart className="h-3.5 w-3.5" /> Mais vendas
+                    </button>
+                  </div>
+                </div>
+                {topCriativos.length === 0 ? (
                   <Card><CardContent className="py-8 text-center text-muted-foreground">Nenhum criativo.</CardContent></Card>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {ads.slice(0, 3).map((a, i) => (
+                    {topCriativos.map((a, i) => (
                       <Card key={i} className="overflow-hidden">
                         <div className="bg-muted/40 flex items-center justify-center">
                           {a.thumbnail
