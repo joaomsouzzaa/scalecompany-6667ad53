@@ -154,9 +154,9 @@ export default function Campanhas() {
                 {/* PERFORMANCE POR CAMPANHA */}
                 <SectionTitle>Performance por Campanha {campanhas.length > 0 && `· ${campanhas.length} campanhas`}{lc && <span className="text-primary normal-case font-normal"> · atualizando…</span>}</SectionTitle>
                 {(
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4">
                     {campanhas.map((c: CampaignRow) => {
-                      const f = funil(c.name); const fs = freqStatus(c.frequency);
+                      const f = funil(c.name);
                       return (
                         <Card key={c.id}>
                           <CardContent className="p-4 space-y-3">
@@ -170,17 +170,26 @@ export default function Campanhas() {
                                 <p className="text-[11px] text-muted-foreground">{totalSpend > 0 ? fmtPct((c.spend / totalSpend) * 100) : "—"} do total</p>
                               </div>
                             </div>
-                            <div className="grid grid-cols-4 gap-2 text-center border-t border-border pt-2">
-                              <div><p className="text-[10px] text-muted-foreground uppercase">Alcance</p><p className="text-sm font-bold">{fmtNum(c.reach)}</p></div>
-                              <div><p className="text-[10px] text-muted-foreground uppercase">CTR</p><p className="text-sm font-bold text-blue-400">{fmtPct(c.ctr)}</p></div>
-                              <div><p className="text-[10px] text-muted-foreground uppercase">CPC</p><p className="text-sm font-bold">{fmtBRL(c.cpc)}</p></div>
-                              <div><p className="text-[10px] text-muted-foreground uppercase">Freq.</p><p className="text-sm font-bold">{c.frequency.toFixed(1)}</p><span className={`text-[9px] px-1 rounded ${fs.cls}`}>{fs.label}</span></div>
-                            </div>
-                            <div className="grid grid-cols-4 gap-2">
-                              {[["Views", c.views], ["Reações", c.reactions], ["Saves", c.saves], ["Comments", c.comments]].map(([lbl, val]) => (
-                                <div key={lbl as string} className="rounded-md bg-muted/40 p-2 text-center">
-                                  <p className="text-sm font-bold">{fmtNum(val as number)}</p>
-                                  <p className="text-[10px] text-muted-foreground">{lbl}</p>
+                            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2 border-t border-border pt-3">
+                              {([
+                                ["Investimento", fmtBRL(c.spend)],
+                                ["Frequência", c.frequency.toFixed(1)],
+                                ["Impressões", fmtNum(c.impressions)],
+                                ["CPM", fmtBRL(c.cpm)],
+                                ["CTR", fmtPct(c.ctr)],
+                                ["Cliques no link", fmtNum(c.linkClicks)],
+                                ["CPC", fmtBRL(c.cpc)],
+                                ["Connect Rate", fmtPct(c.connectRate)],
+                                ["Page View", fmtNum(c.pageViews)],
+                                ["Custo Page View", fmtBRL(c.costPerPageView)],
+                                ["Checkouts iniciados", fmtNum(c.checkouts)],
+                                ["% Conv. LP/Checkout", fmtPct(c.convLP)],
+                                ["Vendas", fmtNum(c.purchases)],
+                                ["CAC", c.cac > 0 ? fmtBRL(c.cac) : "—"],
+                              ] as [string, string][]).map(([lbl, val]) => (
+                                <div key={lbl} className="rounded-md bg-muted/40 p-2 text-center">
+                                  <p className="text-[10px] text-muted-foreground leading-tight min-h-[2.4em] flex items-center justify-center">{lbl}</p>
+                                  <p className="text-sm font-bold">{val}</p>
                                 </div>
                               ))}
                             </div>

@@ -518,6 +518,9 @@ export interface CampaignRow {
   id: string; name: string; spend: number; reach: number; impressions: number;
   clicks: number; ctr: number; cpc: number; frequency: number;
   views: number; reactions: number; saves: number; comments: number;
+  // Funil de conversão
+  linkClicks: number; cpm: number; pageViews: number; checkouts: number; purchases: number;
+  connectRate: number; costPerPageView: number; convLP: number; cac: number;
 }
 export interface AdSetRow {
   campaign: string; name: string; spend: number; reach: number; clicks: number; ctr: number; cpc: number; frequency: number;
@@ -555,18 +558,30 @@ export async function fetchCampaignBreakdown(
   await Promise.all(accountIds.map(async (id) => {
     const res = await graphApiFetch<{ data: Array<any> }>(`/${id}/insights`, {
       level: "campaign", time_range, limit: "500",
-      fields: "campaign_id,campaign_name,spend,reach,impressions,clicks,ctr,cpc,frequency,actions",
+      fields: "campaign_id,campaign_name,spend,reach,impressions,clicks,ctr,cpc,frequency,inline_link_clicks,actions",
     });
     for (const r of res.data || []) {
       if (campaignSlug && !campaignMatchesSlug(r.campaign_name, variants, strictSales)) continue;
+      const spend = parseFloat(r.spend) || 0;
+      const impressions = parseInt(r.impressions) || 0;
+      const linkClicks = parseInt(r.inline_link_clicks) || 0;
+      const pageViews = sumAction(r.actions, ["landing_page_view"]);
+      const checkouts = pickAction(r.actions, ["omni_initiated_checkout", "initiate_checkout", "offsite_conversion.fb_pixel_initiate_checkout"]);
+      const purchases = pickAction(r.actions, ["omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase"]);
       rows.push({
         id: r.campaign_id, name: r.campaign_name || "—",
-        spend: parseFloat(r.spend) || 0, reach: parseInt(r.reach) || 0, impressions: parseInt(r.impressions) || 0,
+        spend, reach: parseInt(r.reach) || 0, impressions,
         clicks: parseInt(r.clicks) || 0, ctr: parseFloat(r.ctr) || 0, cpc: parseFloat(r.cpc) || 0, frequency: parseFloat(r.frequency) || 0,
         views: sumAction(r.actions, ["video_view"]),
         reactions: sumAction(r.actions, ["post_reaction"]),
         saves: pickAction(r.actions, ["onsite_conversion.post_save", "post_save"]),
         comments: sumAction(r.actions, ["comment"]),
+        linkClicks, cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
+        pageViews, checkouts, purchases,
+        connectRate: linkClicks > 0 ? (pageViews / linkClicks) * 100 : 0,
+        costPerPageView: pageViews > 0 ? spend / pageViews : 0,
+        convLP: pageViews > 0 ? (checkouts / pageViews) * 100 : 0,
+        cac: purchases > 0 ? spend / purchases : 0,
       });
     }
   }));
