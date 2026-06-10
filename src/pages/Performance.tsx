@@ -107,8 +107,10 @@ export default function Performance() {
   const [filters, setFilters] = useState<Filters>({
     dateRange: "90d", startDate: init.s, endDate: init.e,
     adAccount: localStorage.getItem("selected_ad_account") || "all",
-    city: "all", produtos: [],
+    city: localStorage.getItem("analytics_city") || "all", produtos: [],
   });
+  // Persiste a cidade (Performance/Campanhas mantêm a última selecionada, inclusive no F5).
+  const onFiltersChange = (f: Filters) => { setFilters(f); localStorage.setItem("analytics_city", f.city); };
 
   const { data: cidades = [] } = useCidades();
   const selectedCidade = cidades.find((c) => c.slug === filters.city);
@@ -173,7 +175,7 @@ export default function Performance() {
           </header>
 
           <div className="p-6 space-y-6 min-w-0 max-w-full overflow-x-hidden">
-            <DashboardFilters filters={filters} onFiltersChange={setFilters} />
+            <DashboardFilters filters={filters} onFiltersChange={onFiltersChange} />
 
             {!enabled ? (
               <Card><CardContent className="py-10 text-center text-muted-foreground">

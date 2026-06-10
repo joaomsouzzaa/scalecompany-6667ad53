@@ -36,8 +36,11 @@ export default function Campanhas() {
   const init = (() => { const e = new Date(); const s = new Date(); s.setDate(s.getDate() - 89); return { s, e }; })();
   const [filters, setFilters] = useState<Filters>({
     dateRange: "90d", startDate: init.s, endDate: init.e,
-    adAccount: localStorage.getItem("selected_ad_account") || "all", city: "all", produtos: [],
+    adAccount: localStorage.getItem("selected_ad_account") || "all",
+    city: localStorage.getItem("analytics_city") || "all", produtos: [],
   });
+  // Persiste a cidade (Performance/Campanhas mantêm a última selecionada, inclusive no F5).
+  const onFiltersChange = (f: Filters) => { setFilters(f); localStorage.setItem("analytics_city", f.city); };
 
   const { data: cidades = [] } = useCidades();
   const selectedCidade = cidades.find((c) => c.slug === filters.city);
@@ -97,7 +100,7 @@ export default function Campanhas() {
           </header>
 
           <div className="p-6 space-y-6">
-            <DashboardFilters filters={filters} onFiltersChange={setFilters} />
+            <DashboardFilters filters={filters} onFiltersChange={onFiltersChange} />
 
             {!enabled ? (
               <Card><CardContent className="py-10 text-center text-muted-foreground">
