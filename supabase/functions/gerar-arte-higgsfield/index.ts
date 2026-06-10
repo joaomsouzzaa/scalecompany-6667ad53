@@ -52,13 +52,36 @@ function extrairUrl(obj: any): string | null {
 }
 
 // Gera imagem na OpenAI (gpt-image-1) e sobe no Storage (devolve base64).
-async function gerarOpenAI(supabase: any, apiKey: string, prompt: string, aspect: string): Promise<string> {
+// Se houver refUrls (imagens de referência do projeto), usa images/edits (image-to-image)
+// para que a arte seja GUIADA pelas referências; senão usa text-to-image (generations).
+async function gerarOpenAI(supabase: any, apiKey: string, prompt: string, aspect: string, refUrls: string[] = []): Promise<string> {
   const size = aspect === "9:16" ? "1024x1536" : aspect === "16:9" ? "1536x1024" : "1024x1024";
-  const res = await fetch("https://api.openai.com/v1/images/generations", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${apiKey.trim()}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "gpt-image-1", prompt, size, n: 1 }),
-  });
+  let res: Response;
+  if (refUrls.length > 0) {
+    const form = new FormData();
+    form.append("model", "gpt-image-1");
+    form.append("prompt", prompt);
+    form.append("size", size);
+    form.append("n", "1");
+    for (const u of refUrls.slice(0, 4)) {
+      try {
+        const r = await fetch(u);
+        const buf = new Uint8Array(await r.arrayBuffer());
+        const ct = r.headers.get("content-type") || "image/png";
+        const ext = ct.includes("jpeg") || ct.includes("jpg") ? "jpg" : ct.includes("webp") ? "webp" : "png";
+        form.append("image[]", new Blob([buf], { type: ct }), `ref.${ext}`);
+      } catch { /* ignora referência que falhar */ }
+    }
+    res = await fetch("https://api.openai.com/v1/images/edits", {
+      method: "POST", headers: { "Authorization": `Bearer ${apiKey.trim()}` }, body: form,
+    });
+  } else {
+    res = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey.trim()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "gpt-image-1", prompt, size, n: 1 }),
+    });
+  }
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`OpenAI ${res.status}: ${j?.error?.message || "falha ao gerar imagem"}`);
   const b64 = j.data?.[0]?.b64_json;
@@ -77,7 +100,7 @@ async function gerarOpenAI(supabase: any, apiKey: string, prompt: string, aspect
 }
 
 Deno.serve(async (req) => {
-  console.log("gerar-arte-higgsfield v5");
+  console.log("gerar-arte-higgsfield v6 - refs image-to-image (openai edits)");
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const supabase = svc();
@@ -106,6 +129,7 @@ Deno.serve(async (req) => {
     const projetoId: string | null = body.projeto_id || null;
     let logoUrl: string | null = null;
     let logoPos = "baixo-centro";
+    let refUrls: string[] = []; // imagens de referência (image-to-image no OpenAI)
     let proj: any = null;
     if (projetoId) {
       proj = (await supabase.from("projetos_design").select("*").eq("id", projetoId).maybeSingle()).data;
@@ -128,6 +152,8 @@ Deno.serve(async (req) => {
       if (ctx) prompt = `${prompt}\n\n${ctx} Respeite a identidade visual da marca.`;
       const { data: ass } = await supabase.from("projeto_assets").select("tipo,url").eq("projeto_id", proj.id);
       logoUrl = (ass || []).find((a: any) => a.tipo === "logo")?.url || null;
+      // Referências de layout/identidade viram entrada de imagem (image-to-image no OpenAI).
+      refUrls = (ass || []).filter((a: any) => a.tipo === "referencia" || a.tipo === "identidade").map((a: any) => a.url).filter(Boolean);
     }
 
     const ins = await supabase.from("tarefa_anexos")
@@ -141,7 +167,7 @@ Deno.serve(async (req) => {
       const { data: oa } = await supabase.from("ai_config").select("api_key").eq("provider", "openai").maybeSingle();
       const oaKey = oa?.api_key || Deno.env.get("OPENAI_API_KEY");
       if (!oaKey) throw new Error("Configure a chave da OpenAI em Agentes → Configurar modelos");
-      url = await gerarOpenAI(supabase, oaKey, prompt, aspect);
+      url = await gerarOpenAI(supabase, oaKey, prompt, aspect, refUrls);
     } else {
       const { data: cfg } = await supabase.from("ai_config").select("api_key").eq("provider", "higgsfield").maybeSingle();
       const creds = cfg?.api_key || Deno.env.get("HIGGSFIELD_CREDENTIALS");
