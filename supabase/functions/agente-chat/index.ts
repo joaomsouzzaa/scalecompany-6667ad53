@@ -17,9 +17,36 @@ async function getKey(supabase: any, provider: string): Promise<string> {
   return data.api_key;
 }
 
+// Monta o bloco da Base de Conhecimento (repositórios ativos) que TODOS os
+// agentes recebem anexado ao system prompt.
+async function buildBaseConhecimento(supabase: any): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from("base_conhecimento")
+      .select("titulo,conteudo")
+      .eq("ativo", true)
+      .order("ordem")
+      .order("created_at");
+    if (!data || data.length === 0) return "";
+    const blocos = data
+      .filter((r: any) => (r.conteudo || "").trim())
+      .map((r: any) => `## ${r.titulo}\n${r.conteudo}`)
+      .join("\n\n");
+    if (!blocos) return "";
+    return `# Base de Conhecimento (consulte SEMPRE antes de responder)
+Estas informações são a VERDADE oficial sobre a empresa, produtos, pessoas e marca.
+Baseie-se nelas em tudo que produzir; nunca contradiga esta base. Se algo necessário
+não estiver aqui, sinalize com [colchetes] em vez de inventar.
+
+${blocos}`;
+  } catch {
+    return "";
+  }
+}
+
 // Chamada simples a um modelo (sem ferramentas)
-async function callModel(agente: any, apiKey: string, messages: Msg[]): Promise<string> {
-  const system = agente.system_prompt || "";
+async function callModel(agente: any, apiKey: string, messages: Msg[], kb = ""): Promise<string> {
+  const system = `${agente.system_prompt || ""}${kb ? `\n\n${kb}` : ""}`.trim();
   const model = agente.modelo;
 
   if (agente.provider === "anthropic") {
@@ -89,11 +116,12 @@ type Step = { autor: string; conteudo: string };
 async function runAgente(supabase: any, agente: any, messages: Msg[], onStep?: (s: Step) => void): Promise<{ text: string; trace: string[] }> {
   const { data: children } = await supabase.from("agentes").select("*").eq("parent_id", agente.id).eq("ativo", true);
   const apiKey = await getKey(supabase, agente.provider);
+  const kb = await buildBaseConhecimento(supabase); // anexada a TODOS os agentes
   const trace: string[] = [];
   const emit = (s: Step) => { try { onStep?.(s); } catch { /* ignore */ } };
 
   if (!children || children.length === 0) {
-    return { text: await callModel(agente, apiKey, messages), trace };
+    return { text: await callModel(agente, apiKey, messages, kb), trace };
   }
 
   const lista = children.map((c: any) => `- ${c.nome}: ${c.descricao || "sem descrição"}`).join("\n");
@@ -133,7 +161,7 @@ normal (sem JSON), consolidando o trabalho da equipe.`;
 
   const convo: Msg[] = [...messages];
   for (let round = 0; round < 6; round++) {
-    const out = await callModel(agenteOrq, apiKey, convo);
+    const out = await callModel(agenteOrq, apiKey, convo, kb);
     const deleg = parseDelegacao(out);
     if (!deleg) return { text: out, trace };
 
@@ -170,7 +198,7 @@ normal (sem JSON), consolidando o trabalho da equipe.`;
     let childResp = "";
     try {
       const childKey = await getKey(supabase, child.provider);
-      childResp = await callModel(child, childKey, [{ role: "user", content: deleg.tarefa }]);
+      childResp = await callModel(child, childKey, [{ role: "user", content: deleg.tarefa }], kb);
     } catch (e) {
       childResp = `(falha ao executar ${child.nome}: ${e instanceof Error ? e.message : "erro"})`;
     }

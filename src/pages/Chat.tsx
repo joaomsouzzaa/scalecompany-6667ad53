@@ -4,9 +4,10 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Send, Bot, MessageSquare, Loader2, Trash2, Mic, MicOff } from "lucide-react";
+import { Plus, Send, Bot, MessageSquare, Loader2, Trash2, Mic, MicOff, BookOpen } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSpeechToText } from "@/hooks/use-speech-to-text";
+import { BaseConhecimentoDialog } from "@/components/BaseConhecimentoDialog";
 import { toast } from "sonner";
 
 type Agente = { id: string; nome: string; provider: string; modelo: string | null; ativo: boolean };
@@ -22,6 +23,7 @@ export default function Chat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [pensando, setPensando] = useState<string>(""); // nome de quem está "pensando" agora
+  const [baseOpen, setBaseOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -206,6 +208,10 @@ export default function Chat() {
                   </SelectContent>
                 </Select>
               </div>
+              <Button variant="outline" size="icon" className="shrink-0" title="Base de conhecimento"
+                onClick={() => setBaseOpen(true)}>
+                <BookOpen className="h-4 w-4" />
+              </Button>
             </header>
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -258,6 +264,7 @@ export default function Chat() {
           </div>
         </main>
       </div>
+      <BaseConhecimentoDialog open={baseOpen} onOpenChange={setBaseOpen} />
     </SidebarProvider>
   );
 }
