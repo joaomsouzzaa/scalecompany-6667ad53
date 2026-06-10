@@ -74,8 +74,8 @@ export function PaymentMethodChart({ data }: PaymentMethodChartProps) {
                   data={chartData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={70}
-                  outerRadius={110}
+                  innerRadius="58%"
+                  outerRadius="92%"
                   paddingAngle={3}
                   dataKey="value"
                   stroke="none"
