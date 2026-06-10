@@ -111,22 +111,13 @@ function isConvite(row: VendaRow): boolean {
   return (row.tipo_ingresso || "").toLowerCase().includes("convite") || (Number(row.valor) || 0) === 0;
 }
 
-function isDuplo(row: VendaRow): boolean {
-  const tipo = (row.tipo_ingresso || "").toLowerCase();
-  const nome = (row.produto || "").toLowerCase();
-  // quantidade 2 = dupla (2 pessoas), mesmo que tenha sido importado como "individual".
-  // Corrige vendas duplas que vieram rotuladas errado na importação das vendas antigas.
-  if (Number(row.quantidade) === 2) return true;
-  return tipo.includes("duplo") || tipo.includes("dupla") || tipo.includes("casal")
-    || nome.includes("duplo") || nome.includes("dupla") || nome.includes("2 pessoas");
-}
-
 function calcularKpis(vendas: VendaRow[]) {
   let bilheteriaTotal = 0;
   let bilheteriaVip = 0;
   let bilheteriaIngressos = 0;
   let vendasIndividuais = 0;
   let vendasDuplas = 0;
+  let pedidosPagos = 0; // nº de pedidos pagos (não-convite) — base do ticket médio
   let totalVips = 0;
   let participantes = 0;
   // Counters excluding manual sales (convites) — used for CAC calculation
@@ -152,7 +143,6 @@ function calcularKpis(vendas: VendaRow[]) {
       continue;
     }
 
-    const duplo = isDuplo(v);
     const vip = isVip(v);
     const isManual = v.plataforma === "manual";
     const convite = isConvite(v);
@@ -160,10 +150,13 @@ function calcularKpis(vendas: VendaRow[]) {
     // Participantes conta todos (incluindo convidados, que comparecem)
     participantes += qty;
 
-    // Vendas individuais/duplas: convites (cortesia) não são vendas
+    // Vendas individuais/duplas POR PESSOAS (derivado da quantidade): cada par = 1 dupla,
+    // sobra = 1 individual. Garante que Individuais×1 + Duplas×2 + Convidados = Participantes
+    // em todas as cidades, mesmo com pedidos de 3+ ingressos. Convites não são vendas.
     if (!convite) {
-      if (duplo) vendasDuplas++;
-      else vendasIndividuais++;
+      vendasDuplas += Math.floor(qty / 2);
+      vendasIndividuais += qty % 2;
+      pedidosPagos += 1;
     }
 
     // CAC exclui cortesias: convites e entradas manuais gratuitas
@@ -185,8 +178,8 @@ function calcularKpis(vendas: VendaRow[]) {
     }
   }
 
-  const totalVendas = vendasIndividuais + vendasDuplas;
-  const ticketMedio = totalVendas > 0 ? bilheteriaTotal / totalVendas : 0;
+  // Ticket médio = faturamento por PEDIDO pago (mantém o sentido, independente de qty).
+  const ticketMedio = pedidosPagos > 0 ? bilheteriaTotal / pedidosPagos : 0;
 
   // Chart data: agrupar por dia
   const porDia = new Map<string, { investimento: number; faturamento: number }>();
