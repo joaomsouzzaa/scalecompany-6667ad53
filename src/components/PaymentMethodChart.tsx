@@ -54,8 +54,6 @@ export function PaymentMethodChart({ data }: PaymentMethodChartProps) {
 
   if (chartData.length === 0) return null;
 
-  const total = chartData.reduce((sum, d) => sum + d.value, 0);
-
   return (
     <Card>
       <CardHeader className="flex flex-row items-center gap-2 pb-2">
@@ -65,69 +63,41 @@ export function PaymentMethodChart({ data }: PaymentMethodChartProps) {
         <CardTitle className="text-base font-semibold">Faturamento por Método de Pagamento</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-col items-center gap-4">
-          {/* Donut Chart — mesmos raios/altura dos demais gráficos pizza (padronizado) */}
-          <div className="h-[240px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={45}
-                  outerRadius={78}
-                  paddingAngle={3}
-                  dataKey="value"
-                  stroke="none"
-                  label={renderPctInside}
-                  labelLine={false}
-                >
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  separator=""
-                  formatter={(value: number, _n, p: any) => [`${formatCurrency(value)}`, p?.payload?.name || ""]}
-                  itemStyle={{ color: "#fff" }}
-                  labelStyle={{ color: "#fff", fontWeight: 600 }}
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Breakdown List */}
-          <div className="w-full space-y-3">
-            {chartData.map((item) => {
-              const pct = total > 0 ? ((item.value / total) * 100).toFixed(1) : "0";
-              return (
-                <div key={item.name} className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className="h-3 w-3 rounded-full shrink-0"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span className="text-sm font-medium truncate">{item.name}</span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-sm font-semibold">{formatCurrency(item.value)}</span>
-                    <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                      {pct}%
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-            <div className="border-t border-border pt-2 mt-2 flex items-center justify-between">
-              <span className="text-sm font-semibold">Total</span>
-              <span className="text-sm font-bold">{formatCurrency(total)}</span>
-            </div>
-          </div>
+        {/* Mesma estrutura dos demais gráficos pizza: donut + legenda (cor + método). */}
+        <div className="h-[240px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={chartData}
+                cx="50%"
+                cy="45%"
+                innerRadius={45}
+                outerRadius={78}
+                paddingAngle={3}
+                dataKey="value"
+                nameKey="name"
+                stroke="none"
+                label={renderPctInside}
+                labelLine={false}
+              >
+                {chartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip
+                separator=""
+                formatter={(value: number, _n, p: any) => [`${formatCurrency(value)}`, p?.payload?.name || ""]}
+                itemStyle={{ color: "#fff" }}
+                labelStyle={{ color: "#fff", fontWeight: 600 }}
+                contentStyle={{
+                  backgroundColor: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                }}
+              />
+              <Legend verticalAlign="bottom" height={36} iconType="circle" formatter={(value: string) => <span className="text-xs text-muted-foreground">{value}</span>} />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
       </CardContent>
     </Card>

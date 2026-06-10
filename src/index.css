@@ -275,12 +275,5 @@ main { min-width: 0; }
 /* Containers de gráfico com altura fixa (h-[240px]/h-[300px]) passam a preencher a célula. */
 .tv-mode.tv-3x1 .tv-quad [class*="h-[240px]"],
 .tv-mode.tv-3x1 .tv-quad [class*="h-[300px]"] { height: 100% !important; min-height: 0; flex: 1 1 0; }
-/* Pagamento no quadrante TV: o gráfico fica dentro de um wrapper (flex-col items-center)
-   que envolve donut + lista. O wrapper preenche o card e o donut recebe altura DEFINIDA
-   (senão o Recharts colapsa pra 0 e o donut some). A lista fica logo abaixo. */
-.tv-mode.tv-3x1 .tv-quad .flex-col.items-center { flex: 1 1 0; min-height: 0; width: 100%; justify-content: center; }
-.tv-mode.tv-3x1 .tv-quad .flex-col.items-center > [class*="h-[240px]"] {
-  height: 22vh !important; min-height: 150px; flex: none !important; width: 100%;
-}
 
 
