@@ -695,6 +695,74 @@ export async function warmBreakdownsForCities(
   }
 }
 
+/** Aquece spend total, spend diário e orçamento diário de VÁRIAS cidades com pouquíssimas
+ *  chamadas (3 por conta no total, não por cidade) — evita o rate limit no Modo TV.
+ *  Grava nos MESMOS caches que fetchAdSpend / fetchDailySpendBreakdown / fetchCampaignDailyBudget leem. */
+export async function warmSpendForCities(
+  accountIds: string[], cities: Array<{ slug: string }>, startDate?: Date, endDate?: Date, dateRange = "30d"
+): Promise<void> {
+  const timeRange = clampTimeRange(startDate && endDate
+    ? { since: startDate.toISOString().split("T")[0], until: endDate.toISOString().split("T")[0] }
+    : buildTimeRange(dateRange));
+  const timeRangeParam = JSON.stringify(timeRange);
+
+  // 1 chamada/conta: diário por campanha (deriva spend total E série diária por cidade).
+  const dailyByAccount: Array<{ account: string; rows: any[] }> = [];
+  for (const id of accountIds) {
+    const rows = await graphApiFetchAll(`/${id}/insights`, {
+      level: "campaign", fields: "campaign_name,spend,date_start", time_range: timeRangeParam, time_increment: "1", limit: "500",
+    });
+    dailyByAccount.push({ account: id, rows });
+  }
+  // 1 chamada/conta cada: campanhas e adsets (p/ orçamento diário).
+  const campaignsByAccount: Array<{ account: string; campaigns: any[] }> = [];
+  const adsetsByAccount: Array<{ account: string; adsets: any[] }> = [];
+  for (const id of accountIds) {
+    campaignsByAccount.push({ account: id, campaigns: await graphApiFetchAll(`/${id}/campaigns`, { fields: "id,name,daily_budget,status", limit: "500" }) });
+    adsetsByAccount.push({ account: id, adsets: await graphApiFetchAll(`/${id}/adsets`, { fields: "daily_budget,status,campaign", limit: "500" }) });
+  }
+
+  for (const c of cities) {
+    const variants = slugVariants(c.slug);
+    // Spend total (por conta) + série diária.
+    const results: AdSpendResult[] = [];
+    const dailyMap = new Map<string, number>();
+    for (const { account, rows } of dailyByAccount) {
+      let accSpend = 0;
+      for (const r of rows) {
+        if (!campaignMatchesSlug(r.campaign_name || "", variants, true)) continue;
+        const sp = parseFloat(r.spend) || 0;
+        accSpend += sp;
+        dailyMap.set(r.date_start, (dailyMap.get(r.date_start) || 0) + sp);
+      }
+      results.push({ accountId: account, accountName: "", spend: accSpend });
+    }
+    _spendCache.set("spend_" + spendCacheKey(accountIds, dateRange, startDate, endDate, c.slug) + "_true", { data: results, ts: Date.now() });
+    _spendCache.set("daily_" + spendCacheKey(accountIds, dateRange, startDate, endDate, c.slug) + "_true", { data: dailyMap, ts: Date.now() });
+
+    // Orçamento diário (CBO no nível de campanha + fallback adset).
+    let totalDailyBudget = 0;
+    for (const { account, campaigns } of campaignsByAccount) {
+      const matched = campaigns.filter((cc) => cc.status === "ACTIVE" && campaignMatchesSlug(cc.name, variants, true));
+      const semBudget = new Set<string>();
+      for (const cc of matched) {
+        if (cc.daily_budget && parseFloat(cc.daily_budget) > 0) totalDailyBudget += parseFloat(cc.daily_budget) / 100;
+        else semBudget.add(cc.id);
+      }
+      if (semBudget.size > 0) {
+        const adsets = adsetsByAccount.find((x) => x.account === account)?.adsets || [];
+        for (const a of adsets) {
+          const cid = a.campaign?.id;
+          if (cid && semBudget.has(cid) && a.status === "ACTIVE" && a.daily_budget && parseFloat(a.daily_budget) > 0) {
+            totalDailyBudget += parseFloat(a.daily_budget) / 100;
+          }
+        }
+      }
+    }
+    _spendCache.set("budget_" + accountIds.slice().sort().join(",") + "_" + c.slug + "_true", { data: totalDailyBudget, ts: Date.now() });
+  }
+}
+
 /** Fetch the sum of daily budgets for active campaigns matching a slug.
  *  Checks campaign-level daily_budget first, then falls back to adset-level budgets. */
 export async function fetchCampaignDailyBudget(

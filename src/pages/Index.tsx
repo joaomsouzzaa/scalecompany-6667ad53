@@ -29,7 +29,7 @@ import { DashboardFilters } from "@/components/DashboardFilters";
 import { SalesChart } from "@/components/SalesChart";
 import { PaymentMethodChart } from "@/components/PaymentMethodChart";
 import { fmt, type Filters } from "@/lib/mockData";
-import { fetchAdAccounts, fetchAdSpend, fetchCampaignDailyBudget, fetchDailySpendBreakdown, warmBreakdownsForCities, syncMetaTokenToServer } from "@/lib/meta-ads";
+import { fetchAdAccounts, fetchAdSpend, fetchCampaignDailyBudget, fetchDailySpendBreakdown, warmBreakdownsForCities, warmSpendForCities, syncMetaTokenToServer } from "@/lib/meta-ads";
 import { useVendasData } from "@/hooks/useVendasData";
 import { useCidades } from "@/hooks/useCidades";
 import { getHiddenCidades } from "@/components/EditCidadeDialog";
@@ -207,24 +207,13 @@ const Index = () => {
       if (accountIds.length === 0) return;
       const { startDate: sd, endDate: ed, dateRange: dr } = filtersRef.current;
       const cidades = activeCidadesRef.current;
-      // Breakdowns: 1 chamada por tipo para TODAS as cidades (6 no total) — não estoura o rate limit.
-      try {
-        await warmBreakdownsForCities(accountIds, cidades, sd, ed, dr);
-        // Cache aquecido: re-busca as queries (pega do cache, instantâneo) caso já tenham
-        // vindo vazias durante um cooldown anterior.
-        queryClient.invalidateQueries({ queryKey: ["bd"] });
-      } catch { /* segue */ }
-      // Spend/daily/budget por cidade, sequencial (chamadas leves, sem rajada).
-      for (const c of cidades) {
-        for (const run of [
-          () => fetchAdSpend(accountIds, dr, sd, ed, c.slug, true),
-          () => fetchDailySpendBreakdown(accountIds, dr, sd, ed, c.slug, true),
-          () => fetchCampaignDailyBudget(accountIds, c.slug, true),
-        ]) {
-          try { await run(); } catch { /* segue p/ a próxima */ }
-        }
-      }
-      // Atualiza o investimento da cidade atual com o cache aquecido (limpa "Carregando...").
+      // TUDO de todas as cidades com pouquíssimas chamadas (≈9 no total, não por cidade) —
+      // não estoura o rate limit do Meta, que antes deixava as cidades sem carregar.
+      try { await warmBreakdownsForCities(accountIds, cidades, sd, ed, dr); } catch { /* segue */ }
+      try { await warmSpendForCities(accountIds, cidades, sd, ed, dr); } catch { /* segue */ }
+      // Cache aquecido: re-busca as queries (pega do cache, instantâneo) e atualiza o
+      // investimento da cidade atual (limpa "Carregando..." que sobrou de um cooldown).
+      queryClient.invalidateQueries({ queryKey: ["bd"] });
       setRefreshKey((k) => k + 1);
     } catch { /* best-effort */ }
   }, [isMetaConnected, queryClient]);
