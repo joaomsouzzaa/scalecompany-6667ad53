@@ -253,7 +253,7 @@ export default function Performance() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <BreakCard title="Gênero" rows={bdGenero} type="pie" />
                   <BreakCard title="Faixa Etária" rows={bdIdade} type="bar" />
-                  <BreakCard title="Dispositivo" rows={bdDispositivo} type="bar" />
+                  <BreakCard title="Dispositivo" rows={bdDispositivo} type="pie" />
                   <BreakCard title="Plataforma" rows={bdPlataforma} type="pie" />
                   <BreakCard title="Mobile vs Desktop" rows={bdMobileDesktop} type="pie" />
                   <BreakCard title="Posição (Feed/Reels/Stories)" rows={bdPosicao} type="pie" max={8} />
