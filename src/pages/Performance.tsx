@@ -49,10 +49,11 @@ function BreakCard({ title, rows, type, max }: { title: string; rows: BreakdownR
           ) : type === "pie" ? (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="45%" innerRadius={45} outerRadius={78} paddingAngle={2}>
                   {data.map((_, i) => <Cell key={i} fill={BR_COLORS[i % BR_COLORS.length]} />)}
                 </Pie>
                 <Tooltip separator="" contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} itemStyle={{ color: "#fff" }} labelStyle={{ color: "#fff", fontWeight: 600 }} formatter={(v: number) => [`${v} compras`, ""]} />
+                <Legend verticalAlign="bottom" height={36} iconType="circle" formatter={(value: string) => <span className="text-xs text-muted-foreground">{value}</span>} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
