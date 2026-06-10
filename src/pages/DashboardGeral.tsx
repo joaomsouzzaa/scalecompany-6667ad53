@@ -16,7 +16,6 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAdAccounts, fetchAdSpend, fetchCampaignDailyBudget } from "@/lib/meta-ads";
 import { differenceInDays } from "date-fns";
-import { Skeleton } from "@/components/ui/skeleton";
 
 function getDateRange(dateRange: string, startDate?: Date, endDate?: Date) {
   if (startDate && endDate) {
@@ -236,7 +235,7 @@ const DashboardGeral = () => {
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
         <AppSidebar />
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
           <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
             <SidebarTrigger />
             <div>
@@ -262,20 +261,7 @@ const DashboardGeral = () => {
               }}
             />
 
-            {(isLoading || loadingMeta) ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Card key={i}>
-                    <CardHeader><Skeleton className="h-6 w-32" /></CardHeader>
-                    <CardContent className="space-y-3">
-                      {Array.from({ length: 5 }).map((_, j) => (
-                        <Skeleton key={j} className="h-4 w-full" />
-                      ))}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : visibleCidades.length === 0 ? (
+            {visibleCidades.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 Nenhuma cidade ativa. Cadastre cidades em Configurações → Cadastro de Cidades.
               </div>
@@ -305,7 +291,7 @@ const DashboardGeral = () => {
                             <div>
                               <p className="text-[10px] leading-tight text-muted-foreground">CAC Participante</p>
                               <p className="text-sm font-bold">
-                                {kpi.cacParticipante > 0 ? fmt(kpi.cacParticipante) : "—"}
+                                {(isLoading || loadingMeta) ? "Carregando..." : (kpi.cacParticipante > 0 ? fmt(kpi.cacParticipante) : "—")}
                               </p>
                             </div>
                           </div>
@@ -313,14 +299,14 @@ const DashboardGeral = () => {
                             <Users className="h-4 w-4 text-primary shrink-0" />
                             <div>
                               <p className="text-[10px] leading-tight text-muted-foreground">Participantes</p>
-                              <p className="text-sm font-bold">{kpi.participantes}</p>
+                              <p className="text-sm font-bold">{isLoading ? "Carregando..." : kpi.participantes}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 p-1.5 rounded-md bg-muted/50">
                             <Crown className="h-4 w-4 text-primary shrink-0" />
                             <div>
                               <p className="text-[10px] leading-tight text-muted-foreground">Total VIPs</p>
-                              <p className="text-sm font-bold">{kpi.totalVips}</p>
+                              <p className="text-sm font-bold">{isLoading ? "Carregando..." : kpi.totalVips}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 p-1.5 rounded-md bg-muted/50">
@@ -328,7 +314,7 @@ const DashboardGeral = () => {
                             <div>
                               <p className="text-[10px] leading-tight text-muted-foreground">Projeção</p>
                               <p className="text-sm font-bold">
-                                {kpi.projecao !== null ? kpi.projecao : "—"}
+                                {(isLoading || loadingMeta) ? "Carregando..." : (kpi.projecao !== null ? kpi.projecao : "—")}
                               </p>
                             </div>
                           </div>
@@ -336,7 +322,9 @@ const DashboardGeral = () => {
                             <Banknote className="h-4 w-4 text-primary shrink-0" />
                             <div>
                               <p className="text-[10px] leading-tight text-muted-foreground">Bilheteria (+/-)</p>
-                              {(() => {
+                              {(isLoading || loadingMeta) ? (
+                                <p className="text-sm font-bold">Carregando...</p>
+                              ) : (() => {
                                 const spend = metaSpendMap.get(cidade.slug) || 0;
                                 const diff = kpi.bilheteria - spend;
                                 return (
