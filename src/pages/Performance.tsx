@@ -124,9 +124,7 @@ export default function Performance() {
   const { data: bdIdade = [] } = useQuery(bq("age"));
   const { data: bdDispositivo = [] } = useQuery(bq("impression_device"));
   const { data: bdPlataforma = [] } = useQuery(bq("publisher_platform"));
-  const { data: bdPosicao = [] } = useQuery(bq("platform_position"));
   const { data: bdMobileDesktop = [] } = useQuery(bq("device_platform"));
-  const { data: bdRegiao = [] } = useQuery(bq("region"));
 
   const chartData = daily.map((d) => ({
     name: new Date(d.date + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
@@ -254,9 +252,7 @@ export default function Performance() {
                   <BreakCard title="Faixa Etária" rows={bdIdade} type="bar" />
                   <BreakCard title="Dispositivo" rows={bdDispositivo} type="bar" />
                   <BreakCard title="Plataforma" rows={bdPlataforma} type="pie" />
-                  <BreakCard title="Posição" rows={bdPosicao} type="bar" max={8} />
                   <BreakCard title="Mobile vs Desktop" rows={bdMobileDesktop} type="pie" />
-                  <BreakCard title="Região / Estado" rows={bdRegiao} type="bar" max={8} />
                 </div>
 
                 <Card>
