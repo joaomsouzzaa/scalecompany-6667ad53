@@ -121,6 +121,52 @@ export default function Performance() {
                   <KpiCard title="Video Views" value={L(fmtNum(kpis?.videoViews || 0))} icon={PlayCircle} />
                 </div>
 
+                {/* FUNIL DE CONVERSÃO */}
+                <Card>
+                  <CardHeader><CardTitle className="text-base">Funil de Conversão</CardTitle></CardHeader>
+                  <CardContent>
+                    {loadingKpis ? (
+                      <div className="h-[160px] flex items-center justify-center text-muted-foreground">Carregando...</div>
+                    ) : (() => {
+                      const stages = [
+                        { label: "Impressões", value: kpis?.impressions || 0 },
+                        { label: "Cliques", value: kpis?.clicks || 0 },
+                        { label: "Page Views", value: kpis?.pageViews || 0 },
+                        { label: "Inic. Checkout", value: kpis?.checkouts || 0 },
+                        { label: "Vendas", value: kpis?.purchases || 0 },
+                      ];
+                      const top = stages[0].value || 1;
+                      return (
+                        <div>
+                          <div className="flex items-end gap-2 h-[150px]">
+                            {stages.map((s) => {
+                              const hPct = Math.max(8, (s.value / top) * 100);
+                              return (
+                                <div key={s.label} className="flex-1 flex flex-col items-center justify-end h-full">
+                                  <span className="text-sm font-bold mb-1">{fmtNum(s.value)}</span>
+                                  <div className="w-full rounded-t-md" style={{ height: `${hPct}%`, background: "linear-gradient(180deg, #ff2d75, #bf1d57)" }} />
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            {stages.map((s, i) => {
+                              const prev = i > 0 ? stages[i - 1].value : 0;
+                              const step = i === 0 ? null : (prev > 0 ? (s.value / prev) * 100 : 0);
+                              return (
+                                <div key={s.label} className="flex-1 text-center">
+                                  <p className="text-xs text-muted-foreground leading-tight">{s.label}</p>
+                                  {step !== null && <p className="text-[11px] text-blue-400 font-medium">↓ {fmtPct(step)}</p>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+
                 <Card>
                   <CardHeader><CardTitle className="text-base">Investimento e Cliques por dia</CardTitle></CardHeader>
                   <CardContent>
