@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { KanbanSquare, List, Plus, Trash2, Bot, Send, Settings, ArrowUp, ArrowDown, Image as ImageIcon, Video, Loader2, Paperclip, Maximize2, Download } from "lucide-react";
+import { KanbanSquare, List, Plus, Trash2, Bot, Send, Settings, ArrowUp, ArrowDown, Image as ImageIcon, Video, Loader2, Paperclip, Maximize2, Download, Trash, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -42,7 +42,7 @@ export default function Workflow() {
   const { data: tarefas = [] } = useQuery({
     queryKey: ["tarefas"],
     queryFn: async () => {
-      const { data } = await (supabase as any).from("tarefas").select("*").order("ordem");
+      const { data } = await (supabase as any).from("tarefas").select("*").is("deleted_at", null).order("ordem");
       return (data || []) as Tarefa[];
     },
     refetchInterval: 15000, // pega tarefas criadas pelos agentes
@@ -154,13 +154,42 @@ export default function Workflow() {
     queryClient.invalidateQueries({ queryKey: ["tarefas"] });
   };
 
+  // Exclusão = soft delete (vai pra lixeira, recuperável). Mantém as respostas.
   const excluir = async () => {
     if (!editing) return;
-    await (supabase as any).from("tarefa_respostas").delete().eq("tarefa_id", editing.id);
-    await (supabase as any).from("tarefas").delete().eq("id", editing.id);
+    await (supabase as any).from("tarefas").update({ deleted_at: new Date().toISOString() }).eq("id", editing.id);
     setOpen(false);
     queryClient.invalidateQueries({ queryKey: ["tarefas"] });
-    toast.success("Tarefa excluída");
+    queryClient.invalidateQueries({ queryKey: ["tarefas-lixeira"] });
+    toast.success("Tarefa movida para a lixeira");
+  };
+
+  // ---- Lixeira ----
+  const [lixeiraOpen, setLixeiraOpen] = useState(false);
+  const { data: lixeira = [] } = useQuery({
+    queryKey: ["tarefas-lixeira"],
+    enabled: lixeiraOpen,
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("tarefas").select("*").not("deleted_at", "is", null).order("deleted_at", { ascending: false });
+      return (data || []) as Tarefa[];
+    },
+  });
+  const invLixeira = () => {
+    queryClient.invalidateQueries({ queryKey: ["tarefas"] });
+    queryClient.invalidateQueries({ queryKey: ["tarefas-lixeira"] });
+  };
+  const restaurar = async (t: Tarefa) => {
+    await (supabase as any).from("tarefas").update({ deleted_at: null }).eq("id", t.id);
+    invLixeira();
+    toast.success("Tarefa restaurada");
+  };
+  const excluirDefinitivo = async (t: Tarefa) => {
+    if (!confirm(`Excluir definitivamente "${t.titulo}"? Não dá para recuperar.`)) return;
+    await (supabase as any).from("tarefa_respostas").delete().eq("tarefa_id", t.id);
+    await (supabase as any).from("tarefa_anexos").delete().eq("tarefa_id", t.id);
+    await (supabase as any).from("tarefas").delete().eq("id", t.id);
+    invLixeira();
+    toast.success("Tarefa excluída definitivamente");
   };
 
   const addComentario = async () => {
@@ -221,6 +250,7 @@ export default function Workflow() {
               <button onClick={() => setView("lista")} className={`px-3 py-1.5 text-sm flex items-center gap-1 ${view === "lista" ? "bg-accent" : "hover:bg-accent/60"}`}><List className="h-4 w-4" /> Lista</button>
             </div>
             <Button variant="outline" onClick={() => setColsOpen(true)}><Settings className="mr-2 h-4 w-4" /> Colunas</Button>
+            <Button variant="outline" onClick={() => setLixeiraOpen(true)}><Trash className="mr-2 h-4 w-4" /> Lixeira</Button>
             <Button onClick={() => novaTarefa()}><Plus className="mr-2 h-4 w-4" /> Nova tarefa</Button>
           </header>
 
@@ -447,6 +477,31 @@ export default function Workflow() {
               <Button onClick={salvar}>Salvar</Button>
             </div>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lixeira */}
+      <Dialog open={lixeiraOpen} onOpenChange={setLixeiraOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Trash className="h-5 w-5 text-primary" /> Lixeira</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground">Tarefas excluídas. Restaure ou exclua definitivamente.</p>
+          <div className="space-y-2">
+            {lixeira.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">A lixeira está vazia.</p>
+            ) : lixeira.map((t) => (
+              <div key={t.id} className="flex items-center justify-between gap-2 rounded-md border border-border p-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{t.titulo}</p>
+                  <p className="text-xs text-muted-foreground truncate">{colunaNome(t.coluna_id) || "—"}{t.agente_id ? ` · ${agenteNome(t.agente_id)}` : ""}</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button variant="outline" size="sm" onClick={() => restaurar(t)}><RotateCcw className="mr-1 h-3.5 w-3.5" /> Restaurar</Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Excluir definitivamente" onClick={() => excluirDefinitivo(t)}><Trash2 className="h-4 w-4" /></Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setLixeiraOpen(false)}>Fechar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

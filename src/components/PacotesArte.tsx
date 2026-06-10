@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Trash2, Upload, ArrowLeft, Loader2, Wand2, Download, Move, Package as PackageIcon } from "lucide-react";
+import { Plus, Trash2, Upload, ArrowLeft, Loader2, Wand2, Download, Move, Package as PackageIcon, Search } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -128,6 +128,9 @@ function PacoteDetalhe({ pacote, onBack }: { pacote: Pacote; onBack: () => void 
   const [uploading, setUploading] = useState(false);
   const [editando, setEditando] = useState<Arte | null>(null);
   const [gerar, setGerar] = useState(false);
+  const [buscaHist, setBuscaHist] = useState("");
+  const [paginaHist, setPaginaHist] = useState(1);
+  const POR_PAGINA = 8;
 
   const { data: artes = [] } = useQuery({
     queryKey: ["pacote_artes", pacote.id],
@@ -139,10 +142,26 @@ function PacoteDetalhe({ pacote, onBack }: { pacote: Pacote; onBack: () => void 
   const { data: historico = [] } = useQuery({
     queryKey: ["pacote_geracoes", pacote.id],
     queryFn: async () => {
-      const { data } = await (supabase as any).from("pacote_geracoes").select("*").eq("pacote_id", pacote.id).order("created_at", { ascending: false }).limit(50);
+      const { data } = await (supabase as any).from("pacote_geracoes").select("*").eq("pacote_id", pacote.id).order("created_at", { ascending: false }).limit(500);
       return (data || []) as Geracao[];
     },
   });
+
+  // Nome legível de uma geração (usado na busca e no rótulo).
+  const nomeGeracao = (g: Geracao) =>
+    [g.pacote_nome, g.valores?.cidade, g.valores?.data, g.valores?.local].filter(Boolean).join(" ").toLowerCase();
+
+  const historicoFiltrado = historico.filter((g) => nomeGeracao(g).includes(buscaHist.trim().toLowerCase()));
+  const totalPaginas = Math.max(1, Math.ceil(historicoFiltrado.length / POR_PAGINA));
+  const paginaAtual = Math.min(paginaHist, totalPaginas);
+  const historicoPagina = historicoFiltrado.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA);
+
+  const excluirGeracao = async (g: Geracao) => {
+    if (!confirm("Excluir esta geração do histórico?")) return;
+    await (supabase as any).from("pacote_geracoes").delete().eq("id", g.id);
+    queryClient.invalidateQueries({ queryKey: ["pacote_geracoes", pacote.id] });
+    toast.success("Geração excluída");
+  };
 
   const subir = async (files: FileList) => {
     setUploading(true);
@@ -203,16 +222,39 @@ function PacoteDetalhe({ pacote, onBack }: { pacote: Pacote; onBack: () => void 
 
       {historico.length > 0 && (
         <div className="space-y-2 pt-2">
-          <Label>Histórico de gerados</Label>
-          {historico.map((g) => (
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <Label>Histórico de gerados</Label>
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input value={buscaHist} onChange={(e) => { setBuscaHist(e.target.value); setPaginaHist(1); }}
+                placeholder="Buscar por cidade, data, nome..." className="pl-8 h-9" />
+            </div>
+          </div>
+
+          {historicoPagina.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">Nenhuma geração encontrada para "{buscaHist}".</p>
+          ) : historicoPagina.map((g) => (
             <div key={g.id} className="flex items-center justify-between gap-2 rounded-md border border-border p-2 text-sm">
               <span className="truncate">
                 {g.valores?.cidade || "—"} {g.valores?.data ? `· ${g.valores.data}` : ""}
                 <span className="text-muted-foreground"> · {g.qtd} artes · {new Date(g.created_at).toLocaleString("pt-BR")}</span>
               </span>
-              {g.zip_url && <Button asChild variant="outline" size="sm"><a href={g.zip_url} target="_blank" rel="noreferrer"><Download className="h-4 w-4" /></a></Button>}
+              <div className="flex items-center gap-1 shrink-0">
+                {g.zip_url && <Button asChild variant="outline" size="sm"><a href={g.zip_url} target="_blank" rel="noreferrer"><Download className="h-4 w-4" /></a></Button>}
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => excluirGeracao(g)} title="Excluir geração">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           ))}
+
+          {totalPaginas > 1 && (
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <Button variant="outline" size="sm" disabled={paginaAtual <= 1} onClick={() => setPaginaHist((p) => Math.max(1, p - 1))}>Anterior</Button>
+              <span className="text-xs text-muted-foreground">Página {paginaAtual} de {totalPaginas}</span>
+              <Button variant="outline" size="sm" disabled={paginaAtual >= totalPaginas} onClick={() => setPaginaHist((p) => Math.min(totalPaginas, p + 1))}>Próxima</Button>
+            </div>
+          )}
         </div>
       )}
 
