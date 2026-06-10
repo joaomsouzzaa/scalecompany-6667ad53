@@ -204,19 +204,23 @@ const Index = () => {
         : (await fetchAdAccounts()).map((a) => a.id);
       if (accountIds.length === 0) return;
       const { startDate: sd, endDate: ed, dateRange: dr } = filtersRef.current;
+      // Sequencial (uma chamada por vez) p/ NÃO estourar o rate limit do Meta — o que
+      // antes deixava algumas cidades sem carregar. Cada resultado fica no cache (10 min).
+      const tarefas = (slug: string) => [
+        () => fetchAdSpend(accountIds, dr, sd, ed, slug, true),
+        () => fetchDailySpendBreakdown(accountIds, dr, sd, ed, slug, true),
+        () => fetchCampaignDailyBudget(accountIds, slug, true),
+        () => fetchBreakdown(accountIds, "gender", sd, ed, dr, slug, true),
+        () => fetchBreakdown(accountIds, "age", sd, ed, dr, slug, true),
+        () => fetchBreakdown(accountIds, "impression_device", sd, ed, dr, slug, true),
+        () => fetchBreakdown(accountIds, "publisher_platform", sd, ed, dr, slug, true),
+        () => fetchBreakdown(accountIds, "device_platform", sd, ed, dr, slug, true),
+        () => fetchBreakdown(accountIds, "publisher_platform,platform_position", sd, ed, dr, slug, true, "platform_position"),
+      ];
       for (const c of activeCidadesRef.current) {
-        const slug = c.slug;
-        await Promise.allSettled([
-          fetchAdSpend(accountIds, dr, sd, ed, slug, true),
-          fetchDailySpendBreakdown(accountIds, dr, sd, ed, slug, true),
-          fetchCampaignDailyBudget(accountIds, slug, true),
-          fetchBreakdown(accountIds, "gender", sd, ed, dr, slug, true),
-          fetchBreakdown(accountIds, "age", sd, ed, dr, slug, true),
-          fetchBreakdown(accountIds, "impression_device", sd, ed, dr, slug, true),
-          fetchBreakdown(accountIds, "publisher_platform", sd, ed, dr, slug, true),
-          fetchBreakdown(accountIds, "device_platform", sd, ed, dr, slug, true),
-          fetchBreakdown(accountIds, "publisher_platform,platform_position", sd, ed, dr, slug, true, "platform_position"),
-        ]);
+        for (const run of tarefas(c.slug)) {
+          try { await run(); } catch { /* segue p/ a próxima */ }
+        }
       }
     } catch { /* best-effort */ }
   }, [isMetaConnected]);

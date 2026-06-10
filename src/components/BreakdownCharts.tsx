@@ -94,6 +94,10 @@ export function useBreakdownData({ enabled, getAccountIds, startDate, endDate, d
   const bq = (breakdown: string, keyField?: string) => ({
     queryKey: ["bd", breakdown, keyField || "", ...qkey],
     enabled,
+    // Cache longo: na rotação do TV os dados da cidade ficam guardados e não re-buscam
+    // (sem spinner). O refresh real acontece a cada 10 min em segundo plano.
+    staleTime: 10 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
     queryFn: async () => fetchBreakdown(await getAccountIds(), breakdown, startDate, endDate, dateRange, slug, true, keyField),
   });
   const qGenero = useQuery(bq("gender"));
