@@ -201,39 +201,49 @@ export default function Campanhas() {
                   </div>
                 )}
 
-                {/* CONJUNTOS DE ANÚNCIOS */}
+                {/* CONJUNTOS DE ANÚNCIOS — mesmas 14 métricas do funil, em cards */}
                 <SectionTitle>Conjuntos de Anúncios {adsets.length > 0 && `· ${adsets.length} ad sets`}</SectionTitle>
-                {(
-                  <Card><CardContent className="p-0">
-                    <div className="max-h-[420px] overflow-auto">
-                      <table className="w-full text-sm">
-                        <thead className="sticky top-0 bg-card text-muted-foreground text-xs">
-                          <tr className="border-b border-border">
-                            <th className="text-left p-3">Conjunto</th><th className="text-right p-3">Gasto</th>
-                            <th className="text-right p-3">Alcance</th><th className="text-right p-3">Cliques</th>
-                            <th className="text-right p-3">CTR</th><th className="text-right p-3">CPC</th><th className="text-right p-3">Freq.</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {adsets.map((a, i) => {
-                            const fs = freqStatus(a.frequency);
-                            return (
-                              <tr key={i} className="border-b border-border/50">
-                                <td className="p-3"><span className="font-medium">{a.name}</span><br /><span className="text-[11px] text-muted-foreground">{a.campaign}</span></td>
-                                <td className="p-3 text-right">{fmtBRL(a.spend)}</td>
-                                <td className="p-3 text-right">{fmtNum(a.reach)}</td>
-                                <td className="p-3 text-right">{fmtNum(a.clicks)}</td>
-                                <td className="p-3 text-right text-blue-400">{fmtPct(a.ctr)}</td>
-                                <td className="p-3 text-right">{fmtBRL(a.cpc)}</td>
-                                <td className="p-3 text-right"><span className="inline-flex items-center gap-1"><span className={`h-2 w-2 rounded-full ${fs.dot}`} />{a.frequency.toFixed(1)}</span></td>
-                              </tr>
-                            );
-                          })}
-                          {adsets.length === 0 && <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">Nenhum conjunto.</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent></Card>
+                {adsets.length === 0 ? (
+                  <Card><CardContent className="py-8 text-center text-muted-foreground">Nenhum conjunto.</CardContent></Card>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {adsets.map((a, i) => (
+                      <Card key={i}>
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate" title={a.name}>{a.name}</p>
+                              <p className="text-[11px] text-muted-foreground truncate">{a.campaign}</p>
+                            </div>
+                            <p className="text-lg font-bold text-green-400 shrink-0">{fmtBRL(a.spend)}</p>
+                          </div>
+                          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2 border-t border-border pt-3">
+                            {([
+                              ["Investimento", fmtBRL(a.spend)],
+                              ["Frequência", a.frequency.toFixed(1)],
+                              ["Impressões", fmtNum(a.impressions)],
+                              ["CPM", fmtBRL(a.cpm)],
+                              ["CTR", fmtPct(a.ctr)],
+                              ["Cliques no link", fmtNum(a.linkClicks)],
+                              ["CPC", fmtBRL(a.cpc)],
+                              ["Connect Rate", fmtPct(a.connectRate)],
+                              ["Page View", fmtNum(a.pageViews)],
+                              ["Custo Page View", fmtBRL(a.costPerPageView)],
+                              ["Checkouts iniciados", fmtNum(a.checkouts)],
+                              ["% Conv. LP/Checkout", fmtPct(a.convLP)],
+                              ["Vendas", fmtNum(a.purchases)],
+                              ["CAC", a.cac > 0 ? fmtBRL(a.cac) : "—"],
+                            ] as [string, string][]).map(([lbl, val]) => (
+                              <div key={lbl} className="rounded-md bg-muted/40 p-2 text-center">
+                                <p className="text-[10px] text-muted-foreground leading-tight min-h-[2.4em] flex items-center justify-center">{lbl}</p>
+                                <p className="text-sm font-bold">{val}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
                 )}
 
                 {/* TOP CRIATIVOS — top 3 em cards, com a thumbnail/imagem do criativo */}
