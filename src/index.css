@@ -281,4 +281,24 @@ main { min-width: 0; }
    aqui só sobrescrevemos o nº de colunas para 2. */
 .tv-mode.tv-2x1 .tv-content { grid-template-columns: repeat(2, 1fr) !important; }
 
+/* Tela 1 do 2:1 — KPIs em 3 colunas (4/4/3) + bloco de bilheteria embaixo, ocupando
+   a tela toda com tipografia grande. */
+.tv-mode.tv-2x1 .tv-col-kpis { justify-content: center; }
+.tv-mode.tv-2x1 .tv-kpis-2x1 {
+  display: flex; flex-direction: column; height: 100%; justify-content: center; gap: 3vh; width: 100%;
+}
+.tv-mode.tv-2x1 .tv-kpi-cols {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; align-items: start;
+}
+.tv-mode.tv-2x1 .tv-kpi-col { display: flex; flex-direction: column; gap: 1.2rem; }
+.tv-mode.tv-2x1 .tv-kpi-bottom { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; }
+/* Cards maiores e tipografia ampliada (sobrescreve o tamanho compacto do 3:1). */
+.tv-mode.tv-2x1 .tv-col-kpis .kpi-card { padding: 1.1rem 1.3rem !important; }
+.tv-mode.tv-2x1 .tv-col-kpis .kpi-value {
+  font-size: clamp(1.5rem, 2.2vw, 2.8rem) !important; line-height: 1.1; white-space: nowrap;
+}
+.tv-mode.tv-2x1 .tv-col-kpis .kpi-title { font-size: clamp(0.85rem, 1vw, 1.3rem) !important; line-height: 1.15; }
+.tv-mode.tv-2x1 .tv-col-kpis .kpi-icon-wrap { height: 2.6rem; width: 2.6rem; }
+.tv-mode.tv-2x1 .tv-col-kpis .kpi-icon-wrap svg { height: 1.3rem; width: 1.3rem; }
+
 

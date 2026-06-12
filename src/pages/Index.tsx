@@ -460,6 +460,36 @@ const Index = () => {
     </div>
   );
 
+  // KPIs da Tela 1 do Modo TV 2:1 — 3 colunas + bloco de bilheteria embaixo.
+  const kpisBlock2x1 = (
+    <div className="tv-kpis-2x1">
+      <div className="tv-kpi-cols">
+        <div className="tv-kpi-col">
+          <KpiCard title="Investimento Total" value={svMeta(fmt(investimentoDisplay))} icon={DollarSign} />
+          <KpiCard title="Bilheteria Total" value={sv(fmt(kpi.bilheteriaTotal))} icon={TrendingUp} />
+          <KpiCard title="CAC por Venda" value={svMeta(fmt(cacVendaDisplay))} icon={Target} />
+          <KpiCard title="CAC por Participante" value={svMeta(fmt(cacParticipanteDisplay))} icon={Users} />
+        </div>
+        <div className="tv-kpi-col">
+          <KpiCard title="Total de Participantes" value={sv(String(kpi.participantes))} icon={Users} />
+          <KpiCard title="Total de VIPs" value={sv(String(kpi.totalVips))} icon={Crown} />
+          <KpiCard title="Convidados" value={sv(String(kpi.totalConvidados))} icon={Gift} />
+          <KpiCard title="Projeção de Participantes" value={(carregando || loadingProjecao) ? "Carregando..." : (projecaoParticipantes !== null ? String(projecaoParticipantes) : "—")} icon={BarChart3} />
+        </div>
+        <div className="tv-kpi-col">
+          <KpiCard title="Vendas Individuais" value={sv(String(kpi.vendasIndividuais))} icon={User} />
+          <KpiCard title="Vendas Duplas" value={sv(String(kpi.vendasDuplas))} icon={Users2} />
+          <KpiCard title="Ticket Médio" value={sv(fmt(kpi.ticketMedio))} icon={ShoppingCart} />
+        </div>
+      </div>
+      <div className="tv-kpi-bottom">
+        <KpiCard title="Bilheteria Ingressos" value={sv(fmt(kpi.bilheteriaIngressos))} icon={Ticket} />
+        <KpiCard title="Bilheteria VIP" value={sv(fmt(kpi.bilheteriaVip))} icon={Gift} />
+        <KpiCard title="Bilheteria (+/-)" value={svMeta(fmt(lucroDisplay))} icon={Banknote} />
+      </div>
+    </div>
+  );
+
   return (
     <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
       
@@ -468,14 +498,21 @@ const Index = () => {
         <main className={tvMode ? `flex-1 tv-mode${tvLayout === "3:1" ? " tv-3x1" : tvLayout === "2:1" ? " tv-3x1 tv-2x1" : ""}` : "flex-1 overflow-auto"}>
           <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
             <SidebarTrigger />
-            <div className="flex-1">
-              <h1 className="text-xl font-bold tracking-tight">
-                Dashboard{tvMode && selectedCidade ? ` — ${selectedCidade.nome}` : ""}
-              </h1>
-              {!tvMode && (
-                <p className="text-sm text-muted-foreground">
-                  Visão geral de métricas e performance
-                </p>
+            <div className="flex-1 flex items-center gap-3">
+              <div>
+                <h1 className="text-xl font-bold tracking-tight">
+                  Dashboard{tvMode && selectedCidade ? ` — ${selectedCidade.nome}` : ""}
+                </h1>
+                {!tvMode && (
+                  <p className="text-sm text-muted-foreground">
+                    Visão geral de métricas e performance
+                  </p>
+                )}
+              </div>
+              {tvMode && (
+                <Button variant="default" size="sm" onClick={sairTvMode} className="gap-2">
+                  <Tv className="h-4 w-4" /> Sair do Modo TV
+                </Button>
               )}
             </div>
             {!tvMode && (
@@ -491,11 +528,7 @@ const Index = () => {
                 {capturando ? "Gerando..." : "Print relatório"}
               </Button>
             )}
-            {tvMode ? (
-              <Button variant="default" size="sm" onClick={sairTvMode} className="gap-2">
-                <Tv className="h-4 w-4" /> Sair do Modo TV
-              </Button>
-            ) : (
+            {!tvMode && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-2">
@@ -534,8 +567,8 @@ const Index = () => {
               </>
             ) : tvMode && tvLayout === "2:1" ? (
               <>
-                {/* Tela 1 — KPIs */}
-                <div className="tv-col tv-col-kpis">{kpisBlock}</div>
+                {/* Tela 1 — KPIs (3 colunas + bloco de bilheteria) */}
+                <div className="tv-col tv-col-kpis">{kpisBlock2x1}</div>
                 {/* Tela 2 — 4 gráficos (Dispositivo, Posição, Gênero, Investimento x Faturamento) */}
                 <div className="tv-col">
                   <div className="tv-quad">
