@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
-import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode, Eye, EyeOff, Check, ChevronsUpDown, History, CheckCircle2, XCircle } from "lucide-react";
+import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode, Eye, EyeOff, Check, ChevronsUpDown, History, CheckCircle2, XCircle, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { syncMetaTokenToServer } from "@/lib/meta-ads";
 import { useCidades } from "@/hooks/useCidades";
@@ -183,6 +183,23 @@ export default function Notificacoes() {
       toast.error(e?.message || "Falha ao conectar. Confira URL e token.");
     } finally {
       setConnecting(false);
+    }
+  };
+
+  const [desconectando, setDesconectando] = useState(false);
+  const desconectar = async () => {
+    if (!confirm("Desconectar o WhatsApp? Você precisará escanear o QR Code de novo para reconectar (mesmo aparelho ou outro).")) return;
+    setDesconectando(true);
+    try {
+      await chamarUazapi("disconnect");
+      setQrCode(null);
+      setNumeroConectado(null);
+      setCfgStatus("desconectado");
+      toast.success("WhatsApp desconectado. Clique em Conectar / Gerar QR para reconectar.");
+    } catch (e: any) {
+      toast.error(e?.message || "Falha ao desconectar");
+    } finally {
+      setDesconectando(false);
     }
   };
 
@@ -531,6 +548,12 @@ export default function Notificacoes() {
                     {loadingGrupos && <RefreshCw className="mr-2 h-4 w-4 animate-spin" />}
                     {loadingGrupos ? "Carregando..." : "Carregar grupos"}
                   </Button>
+                  {isConnected && (
+                    <Button variant="destructive" onClick={desconectar} disabled={desconectando}>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      {desconectando ? "Desconectando..." : "Desconectar"}
+                    </Button>
+                  )}
                 </div>
                 {qrCode && (
                   <div className="flex flex-col items-center gap-2 pt-2">

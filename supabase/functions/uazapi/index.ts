@@ -14,6 +14,7 @@ const corsHeaders = {
 const UAZAPI = {
   connect: (base: string) => `${base}/instance/connect`,
   status: (base: string) => `${base}/instance/status`,
+  disconnect: (base: string) => `${base}/instance/disconnect`,
   groups: (base: string) => `${base}/group/list`,
   sendText: (base: string) => `${base}/send/text`,
 };
@@ -364,6 +365,14 @@ Deno.serve(async (req) => {
         const qrcode = inst.qrcode || null;
         await supabase.from("whatsapp_config").update({ status, numero }).eq("id", cfg.id);
         return json({ status, numero, connected, qrcode });
+      }
+      case "disconnect": {
+        if (!cfg?.server_url || !cfg?.admin_token) return json({ error: "Configure URL e token primeiro" }, 400);
+        const base = cfg.server_url.replace(/\/$/, "");
+        // Faz logout da instância no UAZAPI (libera pra reconectar com QR — mesmo ou outro aparelho).
+        try { await uazFetch(base, UAZAPI.disconnect(base), cfg.admin_token, {}); } catch (_) { /* segue: marca desconectado mesmo se a API recusar */ }
+        await supabase.from("whatsapp_config").update({ status: "desconectado", numero: null }).eq("id", cfg.id);
+        return json({ success: true, status: "desconectado" });
       }
       case "groups": {
         if (!cfg?.server_url || !cfg?.admin_token) return json({ groups: [] });
