@@ -276,4 +276,9 @@ main { min-width: 0; }
 .tv-mode.tv-3x1 .tv-quad [class*="h-[240px]"],
 .tv-mode.tv-3x1 .tv-quad [class*="h-[300px]"] { height: 100% !important; min-height: 0; flex: 1 1 0; }
 
+/* ===== Modo 2:1 = 2 telas 16:9 lado a lado (Tela 1 KPIs · Tela 2 = 4 gráficos) =====
+   Reaproveita todo o estilo do 3:1 (o main tem as classes tv-3x1 tv-2x1);
+   aqui só sobrescrevemos o nº de colunas para 2. */
+.tv-mode.tv-2x1 .tv-content { grid-template-columns: repeat(2, 1fr) !important; }
+
 

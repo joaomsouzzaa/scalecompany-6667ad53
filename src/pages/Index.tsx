@@ -99,7 +99,7 @@ const Index = () => {
 
   // TV Mode: fullscreen + rotate through active cities every 20s
   const [tvMode, setTvMode] = useState(false);
-  const [tvLayout, setTvLayout] = useState<"16:9" | "3:1">("16:9");
+  const [tvLayout, setTvLayout] = useState<"16:9" | "2:1" | "3:1">("16:9");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Print dos KPIs em 16:9 (apresentação) para relatório no Canva
@@ -465,7 +465,7 @@ const Index = () => {
       
       <div className="min-h-screen flex w-full">
         <AppSidebar />
-        <main className={tvMode ? `flex-1 tv-mode${tvLayout === "3:1" ? " tv-3x1" : ""}` : "flex-1 overflow-auto"}>
+        <main className={tvMode ? `flex-1 tv-mode${tvLayout === "3:1" ? " tv-3x1" : tvLayout === "2:1" ? " tv-3x1 tv-2x1" : ""}` : "flex-1 overflow-auto"}>
           <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
             <SidebarTrigger />
             <div className="flex-1">
@@ -504,13 +504,14 @@ const Index = () => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => entrarTvMode("16:9")}>📺 16:9 (1 TV)</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => entrarTvMode("2:1")}>🖥️ 2:1 (2 TVs lado a lado)</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => entrarTvMode("3:1")}>🖥️ 3:1 (3 TVs lado a lado)</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
           </header>
 
-          <div className={tvMode ? (tvLayout === "3:1" ? "tv-content tv-3col" : "tv-content") : "p-6 space-y-6"}>
+          <div className={tvMode ? "tv-content" : "p-6 space-y-6"}>
             {!tvMode && <DashboardFilters filters={filters} onFiltersChange={handleFiltersChange} />}
 
             {tvMode && tvLayout === "3:1" ? (
@@ -527,6 +528,20 @@ const Index = () => {
                     {cGenero}
                     {cIdade}
                     <PaymentMethodChart data={kpi.pagamentoPorMetodo} />
+                    <SalesChart data={salesData} />
+                  </div>
+                </div>
+              </>
+            ) : tvMode && tvLayout === "2:1" ? (
+              <>
+                {/* Tela 1 — KPIs */}
+                <div className="tv-col tv-col-kpis">{kpisBlock}</div>
+                {/* Tela 2 — 4 gráficos (Dispositivo, Posição, Gênero, Investimento x Faturamento) */}
+                <div className="tv-col">
+                  <div className="tv-quad">
+                    {cDispositivo}
+                    {cPosicao}
+                    {cGenero}
                     <SalesChart data={salesData} />
                   </div>
                 </div>
