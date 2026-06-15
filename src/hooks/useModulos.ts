@@ -1,10 +1,10 @@
 import { useSyncExternalStore } from "react";
 
 // Módulos (grupos do menu) que podem ser ligados/desligados em Configurações → Módulos.
-export type ModuloKey = "eventos" | "inside" | "analytics" | "growth";
+export type ModuloKey = "eventos" | "inside" | "analytics" | "growth" | "financeiro";
 
 const KEY = "modulos_visiveis";
-const DEFAULTS: Record<ModuloKey, boolean> = { eventos: true, inside: true, analytics: true, growth: true };
+const DEFAULTS: Record<ModuloKey, boolean> = { eventos: true, inside: true, analytics: true, growth: true, financeiro: true };
 
 export function lerModulos(): Record<ModuloKey, boolean> {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || "{}") }; }

@@ -13,6 +13,7 @@ import InsideSales from "./pages/InsideSales";
 import CadastroProdutos from "./pages/CadastroProdutos";
 import LeadsInsideSales from "./pages/LeadsInsideSales";
 import Notificacoes from "./pages/Notificacoes";
+import Cobranca from "./pages/Cobranca";
 import Agentes from "./pages/Agentes";
 import Chat from "./pages/Chat";
 import Workflow from "./pages/Workflow";
@@ -51,6 +52,7 @@ const App = () => (
           <Route path="/cadastro-produtos" element={<CadastroProdutos />} />
           <Route path="/cadastro-cidades" element={<CadastroCidades />} />
           <Route path="/notificacoes" element={<Notificacoes />} />
+          <Route path="/cobranca" element={<Cobranca />} />
           <Route path="/agentes" element={<Agentes />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/workflow" element={<Workflow />} />

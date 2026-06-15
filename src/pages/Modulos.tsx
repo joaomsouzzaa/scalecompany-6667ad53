@@ -3,7 +3,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { LayoutGrid, CalendarRange, Users, TrendingUp, Sparkles } from "lucide-react";
+import { LayoutGrid, CalendarRange, Users, TrendingUp, Sparkles, CreditCard } from "lucide-react";
 import { useModulos, setModulo, type ModuloKey } from "@/hooks/useModulos";
 
 const MODULOS: { key: ModuloKey; nome: string; desc: string; icon: any }[] = [
@@ -11,6 +11,7 @@ const MODULOS: { key: ModuloKey; nome: string; desc: string; icon: any }[] = [
   { key: "inside", nome: "Inside Sales", desc: "Dashboard Geral e Leads", icon: Users },
   { key: "analytics", nome: "Analytics", desc: "Performance e Campanhas", icon: TrendingUp },
   { key: "growth", nome: "Growth", desc: "Notificações, Agentes, Chat, Workflow e Designer", icon: Sparkles },
+  { key: "financeiro", nome: "Financeiro", desc: "Cobrança via WhatsApp", icon: CreditCard },
 ];
 
 export default function Modulos() {

@@ -1,246 +1,222 @@
-// Edge function: cobranca
-// Ações:
-//  - processar_lote: processa 1 item pendente do disparo em execução (envia via UAZAPI)
-//  - criar_disparo: cria um disparo a partir de uma lista de contatos
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Endpoints do UAZAPI (mesmos da função `uazapi`).
+const UAZAPI = {
+  connect: (base: string) => `${base}/instance/connect`,
+  status: (base: string) => `${base}/instance/status`,
+  disconnect: (base: string) => `${base}/instance/disconnect`,
+  sendText: (base: string) => `${base}/send/text`,
+};
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+function svc() {
+  return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 }
 
-function aplicarVariaveis(tpl: string, contato: { nome?: string | null; telefone: string; dados?: Record<string, any> | null }) {
-  const dados = contato.dados || {};
-  return tpl.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, key) => {
-    if (key === "nome") return (contato.nome || dados.nome || "") as string;
-    if (key === "telefone") return contato.telefone;
-    const v = dados[key];
-    return v == null ? "" : String(v);
-  });
+// Config da instância EXCLUSIVA da Cobrança.
+async function getConfig(supabase: any) {
+  const { data } = await supabase.from("cobranca_whatsapp_config").select("*").maybeSingle();
+  return data;
 }
 
-async function enviarUazapi(cfg: any, telefone: string, mensagem: string) {
-  const url = `${(cfg.server_url || "").replace(/\/$/, "")}/send/text`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      token: cfg.instance_token || "",
-    },
-    body: JSON.stringify({ number: telefone, text: mensagem }),
+async function uazFetch(base: string, path: string, token: string, body?: unknown) {
+  const res = await fetch(path, {
+    method: body ? "POST" : "GET",
+    headers: { "Content-Type": "application/json", token, admintoken: token },
+    body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`UAZAPI ${res.status}: ${text}`);
-  return text;
+  let json: any = {};
+  try { json = JSON.parse(text); } catch { json = { raw: text }; }
+  if (!res.ok) throw new Error(json?.error || json?.message || `UAZAPI ${res.status}`);
+  return json;
 }
 
-async function processarUmItem(supa: any) {
-  // Pega o disparo em execução mais recente (ou seta 'em_execucao' o mais antigo pendente)
-  let { data: disparo } = await supa
-    .from("cobranca_disparos")
-    .select("*")
-    .eq("status", "em_execucao")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+// Substitui {{var}} pelos valores do mapa
+function render(template: string, vars: Record<string, string | number>): string {
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : ""));
+}
 
-  if (!disparo) {
-    const { data: pend } = await supa
-      .from("cobranca_disparos")
-      .select("*")
-      .eq("status", "pendente")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (!pend) return { ok: true, skipped: "sem_disparo" };
-    await supa
-      .from("cobranca_disparos")
-      .update({ status: "em_execucao", updated_at: new Date().toISOString() })
-      .eq("id", pend.id);
-    disparo = pend;
-  }
+// Normaliza telefone para a chave de identidade (só dígitos).
+function normTelefone(s: string): string {
+  return (s || "").replace(/\D/g, "");
+}
 
-  const { data: item } = await supa
-    .from("cobranca_disparo_itens")
-    .select("*")
-    .eq("disparo_id", disparo.id)
-    .eq("status", "pendente")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+async function enviarTexto(cfg: any, destinatario: string, mensagem: string) {
+  const base = (cfg?.server_url || "").replace(/\/$/, "");
+  const token = cfg?.admin_token;
+  if (!base || !token) throw new Error("Configuração UAZAPI (Cobrança) incompleta");
+  return uazFetch(base, UAZAPI.sendText(base), token, { number: destinatario, text: mensagem });
+}
 
-  if (!item) {
-    // Finaliza disparo
-    await supa
-      .from("cobranca_disparos")
-      .update({ status: "concluido", updated_at: new Date().toISOString() })
-      .eq("id", disparo.id);
-    return { ok: true, finalizado: disparo.id };
-  }
-
-  // Marca em_envio para evitar duplicidade entre execuções
-  await supa.from("cobranca_disparo_itens").update({ status: "em_envio" }).eq("id", item.id);
-
-  // Carrega config UAZAPI
-  const { data: cfg } = await supa
-    .from("cobranca_whatsapp_config")
-    .select("*")
-    .eq("id", 1)
-    .maybeSingle();
-
-  if (!cfg || !cfg.server_url || !cfg.instance_token) {
-    await supa
-      .from("cobranca_disparo_itens")
-      .update({ status: "erro", erro: "Config UAZAPI ausente" })
-      .eq("id", item.id);
-    await supa
-      .from("cobranca_disparos")
-      .update({ erros: (disparo.erros || 0) + 1, updated_at: new Date().toISOString() })
-      .eq("id", disparo.id);
-    return { ok: false, erro: "config_ausente" };
-  }
-
-  // Carrega contato p/ aplicar variáveis
-  const { data: contato } = await supa
-    .from("cobranca_contatos")
-    .select("*")
-    .eq("telefone", item.telefone)
-    .maybeSingle();
-
-  const textoFinal = aplicarVariaveis(item.mensagem || "", contato || { telefone: item.telefone, nome: item.nome });
-
-  try {
-    await enviarUazapi(cfg, item.telefone, textoFinal);
-    const now = new Date().toISOString();
-    await supa
-      .from("cobranca_disparo_itens")
-      .update({ status: "enviado", enviado_em: now, mensagem: textoFinal })
-      .eq("id", item.id);
-    await supa
-      .from("cobranca_disparos")
-      .update({ enviados: (disparo.enviados || 0) + 1, updated_at: now })
-      .eq("id", disparo.id);
-    // Atualiza memória do contato
-    if (contato) {
-      await supa
-        .from("cobranca_contatos")
-        .update({
-          ultima_ordem_enviada: item.ordem ?? contato.ultima_ordem_enviada,
-          ultima_mensagem: textoFinal,
-          ultima_enviada_em: now,
-          updated_at: now,
-        })
-        .eq("id", contato.id);
-    } else {
-      await supa.from("cobranca_contatos").insert({
-        telefone: item.telefone,
-        nome: item.nome,
-        ultima_ordem_enviada: item.ordem,
-        ultima_mensagem: textoFinal,
-        ultima_enviada_em: now,
-      });
-    }
-    return { ok: true, item_id: item.id };
-  } catch (e: any) {
-    const now = new Date().toISOString();
-    await supa
-      .from("cobranca_disparo_itens")
-      .update({ status: "erro", erro: String(e?.message || e) })
-      .eq("id", item.id);
-    await supa
-      .from("cobranca_disparos")
-      .update({ erros: (disparo.erros || 0) + 1, updated_at: now })
-      .eq("id", disparo.id);
-    return { ok: false, erro: String(e?.message || e) };
-  }
+// Próxima mensagem da cadência para um contato, dado o estado atual.
+function proximaMensagem(mensagens: any[], ultimaOrdem: number): any | null {
+  const ativas = mensagens.filter((m) => m.ativo).sort((a, b) => a.ordem - b.ordem);
+  return ativas.find((m) => m.ordem > (ultimaOrdem || 0)) || null;
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-
-  const supa = createClient(SUPABASE_URL, SERVICE_KEY);
-
-  let body: any = {};
-  try { body = await req.json(); } catch (_) { body = {}; }
-  const action = body?.action || "processar_lote";
+  console.log("cobranca v1");
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const json = (obj: unknown, status = 200) =>
+    new Response(JSON.stringify(obj), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   try {
-    if (action === "processar_lote") {
-      // Processa 3 itens com ~20s entre eles (cron mínimo de 1 min)
-      const results: any[] = [];
-      for (let i = 0; i < 3; i++) {
-        const r = await processarUmItem(supa);
-        results.push(r);
-        if (r?.skipped === "sem_disparo") break;
-        if (i < 2) await new Promise((res) => setTimeout(res, 20_000));
+    const supabase = svc();
+    const { action, ...payload } = await req.json();
+    const cfg = await getConfig(supabase);
+
+    switch (action) {
+      case "connect": {
+        if (!cfg?.server_url || !cfg?.admin_token) return json({ error: "Configure URL e token primeiro" }, 400);
+        const base = cfg.server_url.replace(/\/$/, "");
+        const data = await uazFetch(base, UAZAPI.connect(base), cfg.admin_token, {});
+        const inst = data.instance || {};
+        const qrcode = inst.qrcode || data.qrcode || inst.paircode || null;
+        const status = inst.status || (data.connected ? "connected" : "aguardando_qr");
+        await supabase.from("cobranca_whatsapp_config").update({ status, updated_at: new Date().toISOString() }).eq("id", cfg.id);
+        return json({ qrcode, status });
       }
-      return json({ ok: true, results });
+      case "status": {
+        if (!cfg?.server_url || !cfg?.admin_token) return json({ status: "desconectado" });
+        const base = cfg.server_url.replace(/\/$/, "");
+        const data = await uazFetch(base, UAZAPI.status(base), cfg.admin_token);
+        const inst = data.instance || {};
+        const connected = inst.status === "connected" || data.connected === true;
+        const status = connected ? "connected" : (inst.status || "desconectado");
+        const numero = inst.owner || inst.profileName || null;
+        const qrcode = inst.qrcode || null;
+        await supabase.from("cobranca_whatsapp_config").update({ status, numero, updated_at: new Date().toISOString() }).eq("id", cfg.id);
+        return json({ status, numero, connected, qrcode });
+      }
+      case "disconnect": {
+        if (!cfg?.server_url || !cfg?.admin_token) return json({ error: "Configure URL e token primeiro" }, 400);
+        const base = cfg.server_url.replace(/\/$/, "");
+        try { await uazFetch(base, UAZAPI.disconnect(base), cfg.admin_token, {}); } catch (_) { /* marca desconectado mesmo se a API recusar */ }
+        await supabase.from("cobranca_whatsapp_config").update({ status: "desconectado", numero: null, updated_at: new Date().toISOString() }).eq("id", cfg.id);
+        return json({ success: true, status: "desconectado" });
+      }
+      case "send": {
+        await enviarTexto(cfg, payload.destinatario, payload.mensagem);
+        return json({ success: true });
+      }
+
+      // Espelho do CSV: dado um conjunto de telefones, devolve o histórico de cada
+      // contato + qual será a próxima mensagem da cadência.
+      case "espelho": {
+        const contatos: { telefone: string; nome?: string; dados?: Record<string, unknown> }[] = payload.contatos || [];
+        const { data: mensagens } = await supabase.from("cobranca_mensagens").select("*").eq("ativo", true).order("ordem");
+        const tels = contatos.map((c) => normTelefone(c.telefone)).filter(Boolean);
+        const { data: existentes } = tels.length
+          ? await supabase.from("cobranca_contatos").select("*").in("telefone", tels)
+          : { data: [] };
+        const mapa = new Map<string, any>((existentes || []).map((e: any) => [e.telefone, e]));
+        const linhas = contatos.map((c) => {
+          const tel = normTelefone(c.telefone);
+          const mem = mapa.get(tel);
+          const ultimaOrdem = mem?.ultima_ordem_enviada || 0;
+          const prox = proximaMensagem(mensagens || [], ultimaOrdem);
+          const vars = { nome: c.nome || mem?.nome || "", ...(c.dados || {}) } as Record<string, string | number>;
+          return {
+            telefone: tel,
+            nome: c.nome || mem?.nome || "",
+            dados: c.dados || {},
+            ultima_ordem_enviada: ultimaOrdem,
+            ultima_mensagem: mem?.ultima_mensagem || null,
+            ultima_enviada_em: mem?.ultima_enviada_em || null,
+            proxima_ordem: prox?.ordem || null,
+            proxima_mensagem_nome: prox?.nome || null,
+            proxima_mensagem: prox ? render(prox.mensagem, vars) : null,
+            tem_proxima: !!prox,
+          };
+        });
+        return json({ linhas });
+      }
+
+      // Cria o lote + itens (status pendente). O envio real ocorre no cron (processar_lote).
+      case "preparar_lote": {
+        const contatos: { telefone: string; nome?: string; dados?: Record<string, unknown> }[] = payload.contatos || [];
+        if (!contatos.length) return json({ error: "Nenhum contato selecionado" }, 400);
+        const { data: mensagens } = await supabase.from("cobranca_mensagens").select("*").eq("ativo", true).order("ordem");
+
+        const tels = contatos.map((c) => normTelefone(c.telefone)).filter(Boolean);
+        const { data: existentes } = tels.length
+          ? await supabase.from("cobranca_contatos").select("*").in("telefone", tels)
+          : { data: [] };
+        const mapa = new Map<string, any>((existentes || []).map((e: any) => [e.telefone, e]));
+
+        const itens: any[] = [];
+        for (const c of contatos) {
+          const tel = normTelefone(c.telefone);
+          if (!tel) continue;
+          const mem = mapa.get(tel);
+          const prox = proximaMensagem(mensagens || [], mem?.ultima_ordem_enviada || 0);
+          if (!prox) continue; // contato já recebeu toda a cadência
+          const vars = { nome: c.nome || mem?.nome || "", ...(c.dados || {}) } as Record<string, string | number>;
+          // upsert dos dados/nome mais recentes do CSV (não mexe na cadência ainda)
+          await supabase.from("cobranca_contatos").upsert({
+            telefone: tel,
+            nome: c.nome || mem?.nome || null,
+            dados: c.dados || mem?.dados || {},
+            ultima_ordem_enviada: mem?.ultima_ordem_enviada || 0,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "telefone" });
+          itens.push({ telefone: tel, nome: c.nome || mem?.nome || null, mensagem: render(prox.mensagem, vars), ordem: prox.ordem });
+        }
+        if (!itens.length) return json({ error: "Nenhum contato com próxima mensagem pendente" }, 400);
+
+        const { data: disparo, error: dErr } = await supabase.from("cobranca_disparos")
+          .insert({ status: "enviando", total: itens.length }).select("id").single();
+        if (dErr) throw dErr;
+        const { error: iErr } = await supabase.from("cobranca_disparo_itens")
+          .insert(itens.map((it) => ({ ...it, disparo_id: disparo.id })));
+        if (iErr) throw iErr;
+        return json({ disparo_id: disparo.id, total: itens.length });
+      }
+
+      // Chamado pelo cron a cada ~20s: envia 1 item pendente e atualiza memória/progresso.
+      case "processar_lote": {
+        // Pega o item pendente mais antigo do disparo "enviando" mais antigo.
+        const { data: disparo } = await supabase.from("cobranca_disparos")
+          .select("*").eq("status", "enviando").order("created_at", { ascending: true }).limit(1).maybeSingle();
+        if (!disparo) return json({ success: true, idle: true });
+
+        const { data: item } = await supabase.from("cobranca_disparo_itens")
+          .select("*").eq("disparo_id", disparo.id).eq("status", "pendente")
+          .order("created_at", { ascending: true }).limit(1).maybeSingle();
+
+        if (!item) {
+          // Sem mais itens pendentes → conclui o lote.
+          await supabase.from("cobranca_disparos").update({ status: "concluido", updated_at: new Date().toISOString() }).eq("id", disparo.id);
+          return json({ success: true, concluido: disparo.id });
+        }
+
+        try {
+          await enviarTexto(cfg, item.telefone, item.mensagem);
+          await supabase.from("cobranca_disparo_itens").update({ status: "enviado", enviado_em: new Date().toISOString() }).eq("id", item.id);
+          await supabase.from("cobranca_contatos").update({
+            ultima_ordem_enviada: item.ordem,
+            ultima_mensagem: item.mensagem,
+            ultima_enviada_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("telefone", item.telefone);
+          await supabase.from("cobranca_disparos").update({ enviados: (disparo.enviados || 0) + 1, updated_at: new Date().toISOString() }).eq("id", disparo.id);
+          return json({ success: true, enviado: item.id });
+        } catch (e) {
+          await supabase.from("cobranca_disparo_itens").update({ status: "erro", erro: String(e) }).eq("id", item.id);
+          await supabase.from("cobranca_disparos").update({ erros: (disparo.erros || 0) + 1, updated_at: new Date().toISOString() }).eq("id", disparo.id);
+          return json({ success: false, erro: String(e), item: item.id });
+        }
+      }
+
+      default:
+        return json({ error: "ação desconhecida" }, 400);
     }
-
-    if (action === "criar_disparo") {
-      const contatos: Array<{ telefone: string; nome?: string; dados?: Record<string, any> }> = body.contatos || [];
-      const mensagem_id: string | undefined = body.mensagem_id;
-      if (!contatos.length) return json({ error: "contatos vazio" }, 400);
-
-      let mensagemTpl = "";
-      let ordem: number | null = null;
-      if (mensagem_id) {
-        const { data: m } = await supa.from("cobranca_mensagens").select("*").eq("id", mensagem_id).maybeSingle();
-        if (!m) return json({ error: "mensagem_id inválido" }, 400);
-        mensagemTpl = m.mensagem;
-        ordem = m.ordem;
-      } else if (body.mensagem) {
-        mensagemTpl = body.mensagem;
-        ordem = body.ordem ?? null;
-      } else {
-        return json({ error: "informe mensagem_id ou mensagem" }, 400);
-      }
-
-      const { data: disparo, error: e1 } = await supa
-        .from("cobranca_disparos")
-        .insert({ status: "pendente", total: contatos.length })
-        .select()
-        .single();
-      if (e1) return json({ error: e1.message }, 500);
-
-      const itens = contatos.map((c) => ({
-        disparo_id: disparo.id,
-        telefone: String(c.telefone).replace(/\D/g, ""),
-        nome: c.nome || null,
-        mensagem: mensagemTpl,
-        ordem,
-        status: "pendente",
-      }));
-      const { error: e2 } = await supa.from("cobranca_disparo_itens").insert(itens);
-      if (e2) return json({ error: e2.message }, 500);
-
-      // Upsert contatos (memória)
-      for (const c of contatos) {
-        const tel = String(c.telefone).replace(/\D/g, "");
-        await supa
-          .from("cobranca_contatos")
-          .upsert(
-            { telefone: tel, nome: c.nome || null, dados: c.dados || {}, updated_at: new Date().toISOString() },
-            { onConflict: "telefone" }
-          );
-      }
-
-      return json({ ok: true, disparo_id: disparo.id, total: contatos.length });
-    }
-
-    return json({ error: "action desconhecida" }, 400);
-  } catch (e: any) {
-    return json({ error: String(e?.message || e) }, 500);
+  } catch (err) {
+    return json({ error: err instanceof Error ? err.message : "erro interno" }, 500);
   }
 });

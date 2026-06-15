@@ -63,6 +63,10 @@ const growthItems = [
   { title: "Designer", url: "/designer", icon: Palette },
 ];
 
+const financeiroItems = [
+  { title: "Cobrança", url: "/cobranca", icon: CreditCard },
+];
+
 export function AppSidebar() {
   const [isDark, setIsDark] = useState(() => {
     const saved = localStorage.getItem("theme");
@@ -185,6 +189,33 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {growthItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild tooltip={item.title}>
+                    <NavLink
+                      to={item.url}
+                      end
+                      className="hover:bg-sidebar-accent/80"
+                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        )}
+
+        {modulos.financeiro && (
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-sidebar-foreground/50 px-3 mb-1">
+            Financeiro
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {financeiroItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild tooltip={item.title}>
                     <NavLink
