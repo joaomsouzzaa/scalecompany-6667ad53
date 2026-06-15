@@ -131,6 +131,176 @@ export type Database = {
         }
         Relationships: []
       }
+      cobranca_contatos: {
+        Row: {
+          dados: Json
+          id: string
+          nome: string | null
+          telefone: string
+          ultima_enviada_em: string | null
+          ultima_mensagem: string | null
+          ultima_ordem_enviada: number | null
+          updated_at: string
+        }
+        Insert: {
+          dados?: Json
+          id?: string
+          nome?: string | null
+          telefone: string
+          ultima_enviada_em?: string | null
+          ultima_mensagem?: string | null
+          ultima_ordem_enviada?: number | null
+          updated_at?: string
+        }
+        Update: {
+          dados?: Json
+          id?: string
+          nome?: string | null
+          telefone?: string
+          ultima_enviada_em?: string | null
+          ultima_mensagem?: string | null
+          ultima_ordem_enviada?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      cobranca_disparo_itens: {
+        Row: {
+          created_at: string
+          disparo_id: string
+          enviado_em: string | null
+          erro: string | null
+          id: string
+          mensagem: string | null
+          nome: string | null
+          ordem: number | null
+          status: string
+          telefone: string
+        }
+        Insert: {
+          created_at?: string
+          disparo_id: string
+          enviado_em?: string | null
+          erro?: string | null
+          id?: string
+          mensagem?: string | null
+          nome?: string | null
+          ordem?: number | null
+          status?: string
+          telefone: string
+        }
+        Update: {
+          created_at?: string
+          disparo_id?: string
+          enviado_em?: string | null
+          erro?: string | null
+          id?: string
+          mensagem?: string | null
+          nome?: string | null
+          ordem?: number | null
+          status?: string
+          telefone?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cobranca_disparo_itens_disparo_id_fkey"
+            columns: ["disparo_id"]
+            isOneToOne: false
+            referencedRelation: "cobranca_disparos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cobranca_disparos: {
+        Row: {
+          created_at: string
+          enviados: number
+          erros: number
+          id: string
+          status: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enviados?: number
+          erros?: number
+          id?: string
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enviados?: number
+          erros?: number
+          id?: string
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      cobranca_mensagens: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          mensagem: string
+          nome: string | null
+          ordem: number
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          mensagem: string
+          nome?: string | null
+          ordem?: number
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          mensagem?: string
+          nome?: string | null
+          ordem?: number
+        }
+        Relationships: []
+      }
+      cobranca_whatsapp_config: {
+        Row: {
+          admin_token: string | null
+          id: number
+          instance: string | null
+          instance_token: string | null
+          numero: string | null
+          server_url: string | null
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          admin_token?: string | null
+          id?: number
+          instance?: string | null
+          instance_token?: string | null
+          numero?: string | null
+          server_url?: string | null
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          admin_token?: string | null
+          id?: number
+          instance?: string | null
+          instance_token?: string | null
+          numero?: string | null
+          server_url?: string | null
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       conversas: {
         Row: {
           agente_id: string | null
