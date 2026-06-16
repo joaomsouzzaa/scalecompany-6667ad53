@@ -179,9 +179,26 @@ Deno.serve(async (req) => {
 
     // Dedup POR INGRESSO: conjunto de id_transacao já existentes no banco.
     // Mantém também os e-mails como fallback p/ registros manuais antigos sem id.
-    const { data: existentes } = await supabase.from("vendas").select("id_transacao,email_comprador");
-    const idsBanco = new Set((existentes || []).map((r: any) => (r.id_transacao != null ? String(r.id_transacao) : "")).filter(Boolean));
-    const emailsBanco = new Set((existentes || []).map((r: any) => norm(r.email_comprador)).filter(Boolean));
+    // IMPORTANTE: paginar — o Supabase retorna no máx. 1000 linhas por consulta,
+    // e a tabela vendas tem mais que isso. Sem paginar, convites já inseridos
+    // (fora das 1000) eram reinseridos (duplicata) e pagos existentes apareciam
+    // como "faltando" falso.
+    const idsBanco = new Set<string>();
+    const emailsBanco = new Set<string>();
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const { data: lote } = await supabase
+        .from("vendas")
+        .select("id_transacao,email_comprador")
+        .range(from, from + PAGE - 1);
+      if (!lote || lote.length === 0) break;
+      for (const r of lote) {
+        if (r.id_transacao != null) idsBanco.add(String(r.id_transacao));
+        const e = norm(r.email_comprador);
+        if (e) emailsBanco.add(e);
+      }
+      if (lote.length < PAGE) break;
+    }
 
     // Produtos do Kiwify → casa cada um com uma cidade ativa pelo nome.
     const produtos = await listarTudo("/products", token);
