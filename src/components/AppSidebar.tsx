@@ -22,6 +22,7 @@ import {
   KanbanSquare,
   Palette,
   LayoutGrid,
+  Mail,
 } from "lucide-react";
 import { useModulos } from "@/hooks/useModulos";
 import { NavLink } from "@/components/NavLink";
@@ -45,11 +46,13 @@ const eventosItems = [
   { title: "Resumo City", url: "/eventos-geral", icon: LayoutDashboard },
   { title: "Vendas", url: "/vendas-eventos", icon: ShoppingCart },
   { title: "Ingressos Emitidos", url: "/ingressos-emitidos", icon: Ticket },
+  { title: "E-mail", url: "/email", icon: Mail },
 ];
 
 const insideSalesItems = [
   { title: "Dashboard Geral", url: "/inside-sales", icon: LayoutDashboard },
   { title: "Leads", url: "/leads", icon: Users },
+  { title: "Vendas", url: "/inside-sales-vendas", icon: ShoppingCart },
 ];
 
 const analyticsItems = [
