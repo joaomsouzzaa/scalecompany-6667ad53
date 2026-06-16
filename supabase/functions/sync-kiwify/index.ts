@@ -181,10 +181,14 @@ function montarRelatorio(rels: CidadeRel[], cidadesAtivas: number): string {
 }
 
 // Backfill (rodar uma vez): popula ingressos_emitidos a partir dos payloads já
-// salvos em vendas. Idempotente — apaga os ingressos da venda e regrava.
+// salvos em vendas. Idempotente — LIMPA a tabela uma vez e regrava em lote
+// (delete/insert por venda estourava o timeout de 150s da edge function).
 async function backfillIngressos(supabase: any) {
-  let vendasLidas = 0, ingressosGravados = 0, comTickets = 0, fallback = 0;
+  let vendasLidas = 0, comTickets = 0, fallback = 0;
   const PAGE = 1000;
+  const allRows: any[] = [];
+  const seenIds = new Set<string>(); // evita ingresso_id duplicado no lote
+
   for (let from = 0; ; from += PAGE) {
     const { data: lote } = await supabase
       .from("vendas")
@@ -204,51 +208,50 @@ async function backfillIngressos(supabase: any) {
         data_venda: v.data_venda || new Date().toISOString(),
       };
 
-      let rows: any[] = [];
+      const push = (r: any) => {
+        if (r.ingresso_id) { if (seenIds.has(r.ingresso_id)) return; seenIds.add(r.ingresso_id); }
+        allRows.push(r);
+      };
+
       const tickets = Array.isArray(p?.event_tickets) ? p.event_tickets : [];
       if (tickets.length > 0) {
-        // Venda paga Kiwify com event_tickets.
         comTickets++;
-        rows = tickets.map((t: any) => ({
+        for (const t of tickets) push({
           ...base, tipo_ingresso: v.tipo_ingresso || null, batch_name: t.batch_name || null,
           ingresso_id: t.id != null ? String(t.id) : null, external_id: t.external_id || null,
           nome: t.name || null, email: t.email || null, telefone: t.phone || null, cpf: t.cpf || null,
-        }));
+        });
       } else if (v.plataforma === "kiwify" && p?.id && p?.name) {
-        // Convite Kiwify: payload é o próprio participante.
         comTickets++;
-        rows = [{
+        push({
           ...base, tipo_ingresso: "convite", batch_name: p.batch_name || null,
           ingresso_id: String(p.id), external_id: p.external_id || null,
           nome: p.name || null, email: p.email || null, telefone: p.phone || null, cpf: p.cpf || null,
           checkin_at: p.checkin_at || null,
-        }];
+        });
       } else {
-        // Sem dados por pessoa: gera `quantidade` linhas (1ª comprador, resto sem nome).
         fallback++;
         const qtd = Math.max(1, Number(v.quantidade) || 1);
-        rows = Array.from({ length: qtd }, (_, i) => ({
+        for (let i = 0; i < qtd; i++) push({
           ...base, tipo_ingresso: v.tipo_ingresso || null, batch_name: null,
           ingresso_id: null, external_id: null,
           nome: i === 0 ? (v.nome_comprador || null) : "(nome não informado)",
           email: i === 0 ? (v.email_comprador || null) : null,
           telefone: i === 0 ? (v.telefone_comprador || null) : null,
           cpf: v.documento || null,
-        }));
+        });
       }
-
-      if (rows.length === 0) continue;
-      // Idempotência por venda: limpa e regrava.
-      await supabase.from("ingressos_emitidos").delete().eq("venda_id", v.id);
-      const comId = rows.filter((r) => r.ingresso_id);
-      const semId = rows.filter((r) => !r.ingresso_id);
-      if (comId.length) await supabase.from("ingressos_emitidos").upsert(comId, { onConflict: "ingresso_id", ignoreDuplicates: false });
-      if (semId.length) await supabase.from("ingressos_emitidos").insert(semId);
-      ingressosGravados += rows.length;
     }
     if (lote.length < PAGE) break;
   }
-  return { success: true, vendas_lidas: vendasLidas, ingressos_gravados: ingressosGravados, com_tickets: comTickets, fallback };
+
+  // Limpa tudo (1 query) e regrava em lotes.
+  await supabase.from("ingressos_emitidos").delete().not("id", "is", null);
+  const CHUNK = 500;
+  for (let i = 0; i < allRows.length; i += CHUNK) {
+    await supabase.from("ingressos_emitidos").insert(allRows.slice(i, i + CHUNK));
+  }
+  return { success: true, vendas_lidas: vendasLidas, ingressos_gravados: allRows.length, com_tickets: comTickets, fallback };
 }
 
 Deno.serve(async (req) => {
@@ -338,6 +341,11 @@ Deno.serve(async (req) => {
           const vId = (tid && idToVenda.get(tid)) || null;
           await supabase.from("ingressos_emitidos")
             .upsert(ingressoDeParticipante(part, cidade.nome, vId), { onConflict: "ingresso_id", ignoreDuplicates: false });
+          // Remove linhas de fallback (sem ingresso_id) do mesmo pedido — agora
+          // temos o nome real por pessoa, então o "(nome não informado)" sai.
+          if (part.order_id) {
+            await supabase.from("ingressos_emitidos").delete().eq("order_id", String(part.order_id)).is("ingresso_id", null);
+          }
         } catch (_) { /* não aborta a sincronização */ }
 
         if (!ehConvite(part)) {
