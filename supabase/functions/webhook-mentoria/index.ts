@@ -109,6 +109,16 @@ Deno.serve(async (req) => {
     }
     console.log("webhook-mentoria PAYLOAD PARSED keys:", Object.keys(payload).join(", "));
 
+    // 0) GRAVA UMA LINHA JÁ COM O PAYLOAD BRUTO. Garante que TODO POST que chega
+    // vira uma linha visível, mesmo que algo abaixo falhe. Depois enriquecemos.
+    const { data: linhaBase, error: erroBase } = await supabase
+      .from("mentoria_vendas")
+      .insert({ payload, dados: {}, mensagem_enviada: false, mensagem_status: "recebido", data_venda: new Date().toISOString() })
+      .select("id")
+      .single();
+    if (erroBase) throw erroBase;
+    const vendaId = linhaBase!.id;
+
     // 1) Carrega campos mapeados (definem as colunas e as variáveis).
     const { data: campos } = await supabase
       .from("mentoria_campos")
@@ -168,21 +178,6 @@ Deno.serve(async (req) => {
         "approved_date", "created_at", "Purchase.AuthorizedDate",
       ]) as string | null) || new Date().toISOString();
 
-    // 3) Dedup por id_transacao (evita disparo duplicado em reentregas).
-    if (id_transacao) {
-      const { data: existente } = await supabase
-        .from("mentoria_vendas")
-        .select("id")
-        .eq("id_transacao", id_transacao)
-        .maybeSingle();
-      if (existente) {
-        return new Response(
-          JSON.stringify({ ok: true, duplicada: true, id: existente.id }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-    }
-
     // 4) Resolve o gatilho (produto + forma de pagamento).
     const { data: gatilhos } = await supabase
       .from("mentoria_gatilhos")
@@ -212,17 +207,16 @@ Deno.serve(async (req) => {
       )
       .sort((a: any, b: any) => especificidade(b) - especificidade(a))[0];
 
-    // 5) GRAVA A VENDA PRIMEIRO (sempre, instantâneo). O envio do WhatsApp acontece
-    // em segundo plano — assim o CRM recebe 200 na hora e não estoura timeout.
+    // 5) ENRIQUECE a linha já gravada (passo 0) com os campos extraídos.
     const status_inicial = !gatilho
       ? "sem gatilho"
       : !telefone
         ? "sem telefone"
         : "enviando";
 
-    const { data: inserida, error } = await supabase
+    const { error } = await supabase
       .from("mentoria_vendas")
-      .insert({
+      .update({
         id_transacao,
         status,
         produto: produto != null ? String(produto) : null,
@@ -230,18 +224,15 @@ Deno.serve(async (req) => {
         telefone: telefone != null ? String(telefone) : null,
         nome: nome != null ? String(nome) : null,
         dados,
-        payload,
-        mensagem_enviada: false,
         mensagem_status: status_inicial,
         data_venda,
       })
-      .select("id")
-      .single();
+      .eq("id", vendaId);
 
     if (error) throw error;
 
     // 6) Envio do WhatsApp em segundo plano (não bloqueia a resposta).
-    if (gatilho && telefone && inserida?.id) {
+    if (gatilho && telefone) {
       const varsMsg: Record<string, unknown> = { ...dados, nome, produto, forma_pagamento, telefone };
       const enviar = async () => {
         let mensagem_enviada = false;
@@ -259,7 +250,7 @@ Deno.serve(async (req) => {
         await supabase
           .from("mentoria_vendas")
           .update({ mensagem_enviada, mensagem_status })
-          .eq("id", inserida.id);
+          .eq("id", vendaId);
       };
       // EdgeRuntime.waitUntil mantém a tarefa viva após o return; se indisponível, dispara solto.
       try {
@@ -276,7 +267,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ ok: true, id: inserida?.id, mensagem_status: status_inicial }),
+      JSON.stringify({ ok: true, id: vendaId, mensagem_status: status_inicial }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
