@@ -693,6 +693,117 @@ export type Database = {
         }
         Relationships: []
       }
+      mentoria_campos: {
+        Row: {
+          ativo: boolean
+          caminho: string
+          created_at: string
+          id: string
+          label: string
+          ordem: number
+          tipo: string
+        }
+        Insert: {
+          ativo?: boolean
+          caminho: string
+          created_at?: string
+          id?: string
+          label: string
+          ordem?: number
+          tipo?: string
+        }
+        Update: {
+          ativo?: boolean
+          caminho?: string
+          created_at?: string
+          id?: string
+          label?: string
+          ordem?: number
+          tipo?: string
+        }
+        Relationships: []
+      }
+      mentoria_gatilhos: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          forma_pagamento: string | null
+          id: string
+          mensagem: string
+          nome: string | null
+          prioridade: number
+          produto: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          forma_pagamento?: string | null
+          id?: string
+          mensagem: string
+          nome?: string | null
+          prioridade?: number
+          produto?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          forma_pagamento?: string | null
+          id?: string
+          mensagem?: string
+          nome?: string | null
+          prioridade?: number
+          produto?: string | null
+        }
+        Relationships: []
+      }
+      mentoria_vendas: {
+        Row: {
+          created_at: string
+          dados: Json
+          data_venda: string | null
+          forma_pagamento: string | null
+          id: string
+          id_transacao: string | null
+          mensagem_enviada: boolean
+          mensagem_status: string | null
+          nome: string | null
+          payload: Json | null
+          produto: string | null
+          status: string | null
+          telefone: string | null
+        }
+        Insert: {
+          created_at?: string
+          dados?: Json
+          data_venda?: string | null
+          forma_pagamento?: string | null
+          id?: string
+          id_transacao?: string | null
+          mensagem_enviada?: boolean
+          mensagem_status?: string | null
+          nome?: string | null
+          payload?: Json | null
+          produto?: string | null
+          status?: string | null
+          telefone?: string | null
+        }
+        Update: {
+          created_at?: string
+          dados?: Json
+          data_venda?: string | null
+          forma_pagamento?: string | null
+          id?: string
+          id_transacao?: string | null
+          mensagem_enviada?: boolean
+          mensagem_status?: string | null
+          nome?: string | null
+          payload?: Json | null
+          produto?: string | null
+          status?: string | null
+          telefone?: string | null
+        }
+        Relationships: []
+      }
       meta_config: {
         Row: {
           access_token: string | null
