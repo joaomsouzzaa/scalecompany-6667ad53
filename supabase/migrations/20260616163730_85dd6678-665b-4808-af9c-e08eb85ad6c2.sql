@@ -1,0 +1,8 @@
+ALTER TABLE public.email_config
+  ADD COLUMN IF NOT EXISTS whatsapp_destino TEXT,
+  ADD COLUMN IF NOT EXISTS keywords TEXT[] DEFAULT ARRAY[]::TEXT[],
+  ADD COLUMN IF NOT EXISTS ultima_execucao TIMESTAMPTZ;
+
+ALTER TABLE public.email_mensagens
+  ADD COLUMN IF NOT EXISTS resumo TEXT,
+  ADD COLUMN IF NOT EXISTS categoria TEXT;
