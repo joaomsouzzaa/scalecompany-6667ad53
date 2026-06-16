@@ -39,11 +39,10 @@ const ehUpgrade = (produto: string) => /upgrade/i.test(produto || "");
 // Já é um lote VIP?
 const ehVIP = (batch: string) => /vip\s*$/i.test((batch || "").trim());
 
-// Lote-alvo VIP a partir do lote atual.
-// "Lote 2 - Duplo"   -> "Lote 2 Duplo VIP"  (remove o " - " com espaços)
-// "Pré-Venda Duplo"  -> "Pré-Venda Duplo VIP" (mantém o hífen sem espaços)
+// Lote-alvo VIP = mesmo nome do lote + " VIP" no final (mantém o hífen como está).
+// "Lote 2 - Duplo" -> "Lote 2 - Duplo VIP"; "Pré-Venda Duplo" -> "Pré-Venda Duplo VIP"
 function loteAlvoVIP(batch: string): string {
-  return (batch || "").replace(/\s+-\s+/g, " ").trim() + " VIP";
+  return (batch || "").trim() + " VIP";
 }
 
 type VendaRow = {
