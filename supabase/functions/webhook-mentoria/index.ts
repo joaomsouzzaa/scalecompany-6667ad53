@@ -211,29 +211,14 @@ Deno.serve(async (req) => {
       )
       .sort((a: any, b: any) => especificidade(b) - especificidade(a))[0];
 
-    // 5) Dispara a mensagem (se houver gatilho e telefone).
-    const varsMsg: Record<string, unknown> = { ...dados, nome, produto, forma_pagamento, telefone };
-    let mensagem_enviada = false;
-    let mensagem_status: string | null = null;
-    if (gatilho && telefone) {
-      try {
-        const { data: cfg } = await supabase
-          .from("cobranca_whatsapp_config")
-          .select("*")
-          .maybeSingle();
-        await enviarTexto(cfg, String(telefone), render(gatilho.mensagem, varsMsg));
-        mensagem_enviada = true;
-        mensagem_status = "enviada";
-      } catch (e) {
-        mensagem_status = `erro: ${e instanceof Error ? e.message : String(e)}`;
-      }
-    } else if (!gatilho) {
-      mensagem_status = "sem gatilho";
-    } else {
-      mensagem_status = "sem telefone";
-    }
+    // 5) GRAVA A VENDA PRIMEIRO (sempre, instantâneo). O envio do WhatsApp acontece
+    // em segundo plano — assim o CRM recebe 200 na hora e não estoura timeout.
+    const status_inicial = !gatilho
+      ? "sem gatilho"
+      : !telefone
+        ? "sem telefone"
+        : "enviando";
 
-    // 6) Grava a venda.
     const { data: inserida, error } = await supabase
       .from("mentoria_vendas")
       .insert({
@@ -245,8 +230,8 @@ Deno.serve(async (req) => {
         nome: nome != null ? String(nome) : null,
         dados,
         payload,
-        mensagem_enviada,
-        mensagem_status,
+        mensagem_enviada: false,
+        mensagem_status: status_inicial,
         data_venda,
       })
       .select("id")
@@ -254,15 +239,51 @@ Deno.serve(async (req) => {
 
     if (error) throw error;
 
+    // 6) Envio do WhatsApp em segundo plano (não bloqueia a resposta).
+    if (gatilho && telefone && inserida?.id) {
+      const varsMsg: Record<string, unknown> = { ...dados, nome, produto, forma_pagamento, telefone };
+      const enviar = async () => {
+        let mensagem_enviada = false;
+        let mensagem_status = "enviada";
+        try {
+          const { data: cfg } = await supabase
+            .from("cobranca_whatsapp_config")
+            .select("*")
+            .maybeSingle();
+          await enviarTexto(cfg, String(telefone), render(gatilho.mensagem, varsMsg));
+          mensagem_enviada = true;
+        } catch (e) {
+          mensagem_status = `erro: ${e instanceof Error ? e.message : String(e)}`;
+        }
+        await supabase
+          .from("mentoria_vendas")
+          .update({ mensagem_enviada, mensagem_status })
+          .eq("id", inserida.id);
+      };
+      // EdgeRuntime.waitUntil mantém a tarefa viva após o return; se indisponível, dispara solto.
+      try {
+        // @ts-ignore — EdgeRuntime existe no runtime do Supabase
+        if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+          // @ts-ignore
+          EdgeRuntime.waitUntil(enviar());
+        } else {
+          enviar();
+        }
+      } catch {
+        enviar();
+      }
+    }
+
     return new Response(
-      JSON.stringify({ ok: true, id: inserida?.id, mensagem_enviada, mensagem_status }),
+      JSON.stringify({ ok: true, id: inserida?.id, mensagem_status: status_inicial }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
     console.error("webhook-mentoria erro", e);
+    // Responde 200 mesmo em erro para o CRM não marcar como falha e reentregar em loop.
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
