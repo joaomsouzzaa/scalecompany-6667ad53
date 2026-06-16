@@ -38,7 +38,8 @@ function norm(s: unknown): string {
 // UAZAPI: envia texto pela instância da Cobrança.
 async function enviarTexto(cfg: any, destinatario: string, mensagem: string) {
   const base = (cfg?.server_url || "").replace(/\/$/, "");
-  const token = cfg?.admin_token;
+  // Usa o token DA INSTÂNCIA (cai pro admin_token se ainda não houver).
+  const token = cfg?.instance_token || cfg?.admin_token;
   if (!base || !token) throw new Error("Configuração UAZAPI (Cobrança) incompleta");
   const tel = String(destinatario || "").replace(/\D/g, "");
   if (!tel) throw new Error("Telefone do comprador ausente");
