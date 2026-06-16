@@ -331,33 +331,42 @@ export type Database = {
           id: number
           imap_host: string | null
           imap_port: number | null
+          keywords: string[] | null
           password: string | null
           smtp_host: string | null
           smtp_port: number | null
+          ultima_execucao: string | null
           updated_at: string
           username: string | null
+          whatsapp_destino: string | null
         }
         Insert: {
           from_name?: string | null
           id?: number
           imap_host?: string | null
           imap_port?: number | null
+          keywords?: string[] | null
           password?: string | null
           smtp_host?: string | null
           smtp_port?: number | null
+          ultima_execucao?: string | null
           updated_at?: string
           username?: string | null
+          whatsapp_destino?: string | null
         }
         Update: {
           from_name?: string | null
           id?: number
           imap_host?: string | null
           imap_port?: number | null
+          keywords?: string[] | null
           password?: string | null
           smtp_host?: string | null
           smtp_port?: number | null
+          ultima_execucao?: string | null
           updated_at?: string
           username?: string | null
+          whatsapp_destino?: string | null
         }
         Relationships: []
       }
@@ -365,6 +374,7 @@ export type Database = {
         Row: {
           body: string | null
           body_html: string | null
+          categoria: string | null
           created_at: string
           draft_reply: string | null
           from_email: string | null
@@ -373,6 +383,7 @@ export type Database = {
           message_id: string | null
           received_at: string | null
           replied_at: string | null
+          resumo: string | null
           status: string
           subject: string | null
           to_email: string | null
@@ -381,6 +392,7 @@ export type Database = {
         Insert: {
           body?: string | null
           body_html?: string | null
+          categoria?: string | null
           created_at?: string
           draft_reply?: string | null
           from_email?: string | null
@@ -389,6 +401,7 @@ export type Database = {
           message_id?: string | null
           received_at?: string | null
           replied_at?: string | null
+          resumo?: string | null
           status?: string
           subject?: string | null
           to_email?: string | null
@@ -397,6 +410,7 @@ export type Database = {
         Update: {
           body?: string | null
           body_html?: string | null
+          categoria?: string | null
           created_at?: string
           draft_reply?: string | null
           from_email?: string | null
@@ -405,6 +419,7 @@ export type Database = {
           message_id?: string | null
           received_at?: string | null
           replied_at?: string | null
+          resumo?: string | null
           status?: string
           subject?: string | null
           to_email?: string | null
