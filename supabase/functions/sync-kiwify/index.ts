@@ -322,6 +322,9 @@ Deno.serve(async (req) => {
     };
 
     let inseridos = 0;
+    // Acumula participantes p/ gravar ingressos_emitidos EM LOTE no fim (upsert
+    // por participante estourava o timeout de 150s).
+    const partsTodos: { part: any; cidadeNome: string }[] = [];
     for (const p of produtos) {
       const cidade = matchCidade(p.name || "");
       if (!cidade) continue; // produto que não é de cidade ativa
@@ -333,20 +336,7 @@ Deno.serve(async (req) => {
         rel.kiwify_total++;
         const tid = ticketId(part);
         const email = norm(part.email);
-
-        // Ingressos emitidos: grava/atualiza 1 linha por participante (pago e
-        // convite), mesmo que a venda paga ainda não exista no banco — reflete
-        // a verdade da Kiwify. Liga à venda pelo id_transacao quando houver.
-        try {
-          const vId = (tid && idToVenda.get(tid)) || null;
-          await supabase.from("ingressos_emitidos")
-            .upsert(ingressoDeParticipante(part, cidade.nome, vId), { onConflict: "ingresso_id", ignoreDuplicates: false });
-          // Remove linhas de fallback (sem ingresso_id) do mesmo pedido — agora
-          // temos o nome real por pessoa, então o "(nome não informado)" sai.
-          if (part.order_id) {
-            await supabase.from("ingressos_emitidos").delete().eq("order_id", String(part.order_id)).is("ingresso_id", null);
-          }
-        } catch (_) { /* não aborta a sincronização */ }
+        partsTodos.push({ part, cidadeNome: cidade.nome });
 
         if (!ehConvite(part)) {
           // Venda paga: já no banco? (id do ingresso ou e-mail como fallback).
@@ -385,15 +375,28 @@ Deno.serve(async (req) => {
           if (tid) { idsBanco.add(tid); if (novaVenda?.id) idToVenda.set(tid, novaVenda.id); }
           if (email) emailsBanco.add(email);
           rel.convites_inseridos.push({ nome: part.name || "", email: part.email || "" });
-          // Liga o ingresso recém-criado à venda do convite.
-          if (novaVenda?.id) {
-            try {
-              await supabase.from("ingressos_emitidos")
-                .upsert(ingressoDeParticipante(part, cidade.nome, novaVenda.id), { onConflict: "ingresso_id", ignoreDuplicates: false });
-            } catch (_) { /* segue */ }
-          }
         }
       }
+    }
+
+    // Ingressos emitidos EM LOTE: 1 linha por participante (resolve venda_id
+    // agora que os convites já foram inseridos). Upsert por ingresso_id.
+    const ingRows: any[] = [];
+    const ordersComTicket = new Set<string>();
+    for (const { part, cidadeNome } of partsTodos) {
+      const tid = ticketId(part);
+      const vId = (tid && idToVenda.get(tid)) || null;
+      ingRows.push(ingressoDeParticipante(part, cidadeNome, vId));
+      if (part.order_id) ordersComTicket.add(String(part.order_id));
+    }
+    const CHUNK = 500;
+    for (let i = 0; i < ingRows.length; i += CHUNK) {
+      try { await supabase.from("ingressos_emitidos").upsert(ingRows.slice(i, i + CHUNK), { onConflict: "ingresso_id", ignoreDuplicates: false }); } catch (_) { /* segue */ }
+    }
+    // Remove fallback (sem ingresso_id) dos pedidos que agora têm nome real.
+    const orders = [...ordersComTicket];
+    for (let i = 0; i < orders.length; i += 100) {
+      try { await supabase.from("ingressos_emitidos").delete().in("order_id", orders.slice(i, i + 100)).is("ingresso_id", null); } catch (_) { /* segue */ }
     }
 
     const rels = [...relPorCidade.values()];
