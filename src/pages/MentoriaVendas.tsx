@@ -88,6 +88,25 @@ const PRODUTOS_MENTORIA = [
   "Conselho",
 ];
 
+// Formas de pagamento cadastradas no CRM (combinações de Espécie/Boleto/Cheque/Cartão).
+const FORMAS_PAGAMENTO = [
+  "Espécie",
+  "Boleto",
+  "Cheque",
+  "Cartão",
+  "Espécie + Cartão",
+  "Espécie + Boleto",
+  "Espécie + Cheque",
+  "Boleto + Cartão",
+  "Boleto + Cheque",
+  "Cheque + Cartão",
+  "Espécie + Boleto + Cartão",
+  "Espécie + Cheque + Cartão",
+  "Espécie + Boleto + Cheque",
+  "Boleto + Cheque + Cartão",
+  "Espécie + Boleto + Cheque + Cartão",
+];
+
 const MentoriaVendas = () => {
   const qc = useQueryClient();
   const [mapOpen, setMapOpen] = useState(false);
@@ -468,11 +487,24 @@ function GatilhosDialog({
             </div>
             <div className="space-y-1">
               <Label>Forma de pagamento</Label>
-              <Input
-                value={form.forma_pagamento}
-                onChange={(e) => setForm({ ...form, forma_pagamento: e.target.value })}
-                placeholder="pix"
-              />
+              <Select
+                value={form.forma_pagamento || "__any__"}
+                onValueChange={(v) =>
+                  setForm({ ...form, forma_pagamento: v === "__any__" ? "" : v })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Qualquer" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__any__">Qualquer forma</SelectItem>
+                  {FORMAS_PAGAMENTO.map((f) => (
+                    <SelectItem key={f} value={f}>
+                      {f}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label>Prioridade</Label>
