@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -18,21 +17,20 @@ import { Mail, RefreshCw, Send, Plug, Sparkles, Loader2 } from "lucide-react";
 
 type EmailMsg = {
   id: string;
-  remetente: string;
-  remetente_nome: string | null;
-  assunto: string | null;
-  recebido_em: string | null;
-  corpo: string | null;
+  from_email: string | null;
+  from_name: string | null;
+  subject: string | null;
+  received_at: string | null;
+  body: string | null;
   resumo: string | null;
   categoria: string | null;
-  rascunho_resposta: string | null;
+  draft_reply: string | null;
   status: string;
-  respondido_em: string | null;
+  replied_at: string | null;
 };
 
 const STATUS_LABEL: Record<string, string> = {
   novo: "Novo",
-  aprovado: "Aprovado",
   respondido: "Respondido",
   ignorado: "Ignorado",
 };
@@ -40,7 +38,6 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
   novo: "default",
   respondido: "secondary",
   ignorado: "outline",
-  aprovado: "secondary",
 };
 
 export default function Email() {
@@ -52,10 +49,9 @@ export default function Email() {
   const [regenerando, setRegenerando] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
 
-  // ---- Config ----
   const [form, setForm] = useState({
     imap_host: "", imap_port: 993, smtp_host: "", smtp_port: 465,
-    email_usuario: "", senha: "", whatsapp_destino: "", keywords: "", ativo: true,
+    username: "", password: "", from_name: "", whatsapp_destino: "", keywords: "",
   });
   const [salvando, setSalvando] = useState(false);
   const [testando, setTestando] = useState(false);
@@ -63,9 +59,9 @@ export default function Email() {
   const { data: cfg } = useQuery({
     queryKey: ["email-config"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("email_config").select("*").maybeSingle();
+      const { data, error } = await supabase.from("email_config").select("*").eq("id", 1).maybeSingle();
       if (error) throw error;
-      return data;
+      return data as any;
     },
   });
 
@@ -74,9 +70,10 @@ export default function Email() {
       setForm({
         imap_host: cfg.imap_host || "", imap_port: cfg.imap_port || 993,
         smtp_host: cfg.smtp_host || "", smtp_port: cfg.smtp_port || 465,
-        email_usuario: cfg.email_usuario || "", senha: cfg.senha || "",
+        username: cfg.username || "", password: cfg.password || "",
+        from_name: cfg.from_name || "",
         whatsapp_destino: cfg.whatsapp_destino || "",
-        keywords: (cfg.keywords || []).join(", "), ativo: cfg.ativo ?? true,
+        keywords: (cfg.keywords || []).join(", "),
       });
     }
   }, [cfg]);
@@ -84,7 +81,7 @@ export default function Email() {
   const { data: emails = [], isLoading } = useQuery({
     queryKey: ["email-mensagens", statusFilter],
     queryFn: async () => {
-      let q = supabase.from("email_mensagens").select("*").order("recebido_em", { ascending: false });
+      let q = supabase.from("email_mensagens").select("*").order("received_at", { ascending: false });
       if (statusFilter !== "todos") q = q.eq("status", statusFilter);
       const { data, error } = await q;
       if (error) throw error;
@@ -99,9 +96,8 @@ export default function Email() {
     const { error } = await supabase.from("email_config").upsert({
       id: 1, imap_host: form.imap_host, imap_port: Number(form.imap_port) || 993,
       smtp_host: form.smtp_host, smtp_port: Number(form.smtp_port) || 465,
-      email_usuario: form.email_usuario, senha: form.senha,
-      whatsapp_destino: form.whatsapp_destino, keywords, ativo: form.ativo,
-      updated_at: new Date().toISOString(),
+      username: form.username, password: form.password, from_name: form.from_name,
+      whatsapp_destino: form.whatsapp_destino, keywords,
     });
     setSalvando(false);
     if (error) { toast.error("Erro ao salvar: " + error.message); return; }
@@ -123,11 +119,11 @@ export default function Email() {
     const { data, error } = await supabase.functions.invoke("email", { body: { action: "fetch_emails" } });
     setSincronizando(false);
     if (error || data?.error) { toast.error("Erro: " + (error?.message || data?.error)); return; }
-    toast.success(`${data?.novos ?? 0} novo(s) e-mail(s) capturado(s)`);
+    toast.success(`${data?.inserted ?? 0} novo(s) e-mail(s) capturado(s)`);
     queryClient.invalidateQueries({ queryKey: ["email-mensagens"] });
   };
 
-  const abrir = (e: EmailMsg) => { setAberto(e); setRespostaEdit(e.rascunho_resposta || ""); };
+  const abrir = (e: EmailMsg) => { setAberto(e); setRespostaEdit(e.draft_reply || ""); };
 
   const regenerar = async () => {
     if (!aberto) return;
@@ -135,7 +131,7 @@ export default function Email() {
     const { data, error } = await supabase.functions.invoke("email", { body: { action: "regenerate_draft", id: aberto.id } });
     setRegenerando(false);
     if (error || data?.error) { toast.error("Erro: " + (error?.message || data?.error)); return; }
-    setRespostaEdit(data.rascunho || "");
+    setRespostaEdit(data.draft || "");
     toast.success("Rascunho regenerado");
     queryClient.invalidateQueries({ queryKey: ["email-mensagens"] });
   };
@@ -143,7 +139,7 @@ export default function Email() {
   const responder = async () => {
     if (!aberto) return;
     setEnviando(true);
-    const { data, error } = await supabase.functions.invoke("email", { body: { action: "send_reply", id: aberto.id, corpo: respostaEdit } });
+    const { data, error } = await supabase.functions.invoke("email", { body: { action: "send_reply", id: aberto.id, reply: respostaEdit } });
     setEnviando(false);
     if (error || data?.error) { toast.error("Erro ao enviar: " + (error?.message || data?.error)); return; }
     toast.success("Resposta enviada");
@@ -205,26 +201,26 @@ export default function Email() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>E-mail (login)</Label>
-                    <Input placeholder="contato@seudominio.com" value={form.email_usuario} onChange={(e) => setForm({ ...form, email_usuario: e.target.value })} />
+                    <Input placeholder="contato@seudominio.com" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Senha</Label>
-                    <Input type="password" value={form.senha} onChange={(e) => setForm({ ...form, senha: e.target.value })} />
+                    <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Nome de exibição (remetente)</Label>
+                    <Input placeholder="Equipe Scale" value={form.from_name} onChange={(e) => setForm({ ...form, from_name: e.target.value })} />
                   </div>
                   <div className="space-y-1.5">
                     <Label>WhatsApp do relatório (número)</Label>
                     <Input placeholder="5591999999999" value={form.whatsapp_destino} onChange={(e) => setForm({ ...form, whatsapp_destino: e.target.value })} />
-                  </div>
-                  <div className="flex items-center gap-2 pt-6">
-                    <Switch checked={form.ativo} onCheckedChange={(v) => setForm({ ...form, ativo: v })} />
-                    <Label>Captura diária ativa (8h)</Label>
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Palavras-chave (separadas por vírgula)</Label>
                   <Textarea rows={2} value={form.keywords} onChange={(e) => setForm({ ...form, keywords: e.target.value })} />
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center flex-wrap">
                   <Button onClick={salvarConfig} disabled={salvando} variant="secondary">
                     {salvando && <Loader2 className="h-4 w-4 animate-spin" />} Salvar
                   </Button>
@@ -232,7 +228,7 @@ export default function Email() {
                     {testando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />} Testar conexão
                   </Button>
                   {cfg?.ultima_execucao && (
-                    <span className="text-xs text-muted-foreground self-center ml-2">
+                    <span className="text-xs text-muted-foreground">
                       Última captura: {new Date(cfg.ultima_execucao).toLocaleString("pt-BR")}
                     </span>
                   )}
@@ -266,15 +262,15 @@ export default function Email() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium truncate">{e.remetente_nome || e.remetente}</span>
+                            <span className="font-medium truncate">{e.from_name || e.from_email}</span>
                             {e.categoria && <Badge variant="outline" className="text-xs">{e.categoria}</Badge>}
                             <Badge variant={STATUS_VARIANT[e.status] || "default"} className="text-xs">{STATUS_LABEL[e.status] || e.status}</Badge>
                           </div>
-                          <p className="text-sm font-medium mt-1 truncate">{e.assunto}</p>
+                          <p className="text-sm font-medium mt-1 truncate">{e.subject}</p>
                           <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">{e.resumo || "(sem resumo)"}</p>
                         </div>
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {e.recebido_em ? new Date(e.recebido_em).toLocaleString("pt-BR") : ""}
+                          {e.received_at ? new Date(e.received_at).toLocaleString("pt-BR") : ""}
                         </span>
                       </div>
                     </CardContent>
@@ -290,9 +286,9 @@ export default function Email() {
               {aberto && (
                 <>
                   <DialogHeader>
-                    <DialogTitle className="text-base">{aberto.assunto}</DialogTitle>
+                    <DialogTitle className="text-base">{aberto.subject}</DialogTitle>
                     <p className="text-sm text-muted-foreground">
-                      De: {aberto.remetente_nome ? `${aberto.remetente_nome} <${aberto.remetente}>` : aberto.remetente}
+                      De: {aberto.from_name ? `${aberto.from_name} <${aberto.from_email}>` : aberto.from_email}
                     </p>
                   </DialogHeader>
 
@@ -300,7 +296,7 @@ export default function Email() {
                     <div>
                       <Label className="text-xs uppercase text-muted-foreground">E-mail recebido</Label>
                       <div className="mt-1 text-sm whitespace-pre-wrap rounded-md border p-3 max-h-60 overflow-y-auto bg-muted/30">
-                        {aberto.corpo || "(vazio)"}
+                        {aberto.body || "(vazio)"}
                       </div>
                     </div>
 
