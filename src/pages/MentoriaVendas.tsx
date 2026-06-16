@@ -22,6 +22,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Settings2, Zap, Plus, Trash2, CheckCircle2, XCircle } from "lucide-react";
@@ -62,6 +69,24 @@ type Venda = {
   data_venda: string | null;
   created_at: string;
 };
+
+// Produtos cadastrados no CRM (o webhook envia exatamente um destes valores no
+// campo "Tipo de produto vendido"). Ajuste a lista conforme o CRM.
+const PRODUTOS_MENTORIA = [
+  "Programa Scale",
+  "Scale Club",
+  "Formatação de franquia",
+  "Publicidade",
+  "Patrocinio",
+  "Consultoria",
+  "Renovação Club",
+  "Renovação Programa Scale",
+  "Embaixador de marca",
+  "Trilha Mentor",
+  "Imersão Scale",
+  "Imersão formação de franquia",
+  "Conselho",
+];
 
 const MentoriaVendas = () => {
   const qc = useQueryClient();
@@ -422,11 +447,24 @@ function GatilhosDialog({
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
               <Label>Produto</Label>
-              <Input
-                value={form.produto}
-                onChange={(e) => setForm({ ...form, produto: e.target.value })}
-                placeholder="Mentoria X"
-              />
+              <Select
+                value={form.produto || "__any__"}
+                onValueChange={(v) =>
+                  setForm({ ...form, produto: v === "__any__" ? "" : v })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Qualquer" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__any__">Qualquer produto</SelectItem>
+                  {PRODUTOS_MENTORIA.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label>Forma de pagamento</Label>
