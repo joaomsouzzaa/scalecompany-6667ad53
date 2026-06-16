@@ -371,7 +371,6 @@ function GatilhosDialog({
     produto: "",
     forma_pagamento: "",
     mensagem: "",
-    prioridade: "0",
   });
   const [saving, setSaving] = useState(false);
 
@@ -381,7 +380,7 @@ function GatilhosDialog({
       const { data, error } = await (supabase as any)
         .from("mentoria_gatilhos")
         .select("*")
-        .order("prioridade", { ascending: false });
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return data as Gatilho[];
     },
@@ -400,14 +399,13 @@ function GatilhosDialog({
       produto: form.produto.trim() || null,
       forma_pagamento: form.forma_pagamento.trim() || null,
       mensagem: form.mensagem.trim(),
-      prioridade: parseInt(form.prioridade) || 0,
     });
     setSaving(false);
     if (error) {
       toast.error("Erro ao salvar gatilho", { description: error.message });
       return;
     }
-    setForm({ produto: "", forma_pagamento: "", mensagem: "", prioridade: "0" });
+    setForm({ produto: "", forma_pagamento: "", mensagem: "" });
     refresh();
   };
 
@@ -433,8 +431,8 @@ function GatilhosDialog({
           <DialogTitle>Gatilhos de mensagem</DialogTitle>
           <DialogDescription>
             Escolha qual mensagem é enviada por <strong>produto</strong> e{" "}
-            <strong>forma de pagamento</strong>. Vazio = qualquer. Maior prioridade
-            vence em caso de empate.
+            <strong>forma de pagamento</strong>. Vazio = qualquer. O gatilho mais
+            específico vence automaticamente.
           </DialogDescription>
         </DialogHeader>
 
@@ -450,7 +448,6 @@ function GatilhosDialog({
                   <Badge variant="outline">
                     Pagamento: {g.forma_pagamento || "qualquer"}
                   </Badge>
-                  <Badge variant="outline">Prioridade: {g.prioridade}</Badge>
                 </div>
                 <p className="text-sm whitespace-pre-wrap">{g.mensagem}</p>
               </div>
@@ -463,7 +460,7 @@ function GatilhosDialog({
         </div>
 
         <div className="space-y-2 border-t pt-4">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label>Produto</Label>
               <Select
@@ -505,14 +502,6 @@ function GatilhosDialog({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>Prioridade</Label>
-              <Input
-                type="number"
-                value={form.prioridade}
-                onChange={(e) => setForm({ ...form, prioridade: e.target.value })}
-              />
             </div>
           </div>
           <div className="space-y-1">

@@ -159,12 +159,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 4) Resolve o gatilho (produto + forma de pagamento), maior prioridade.
+    // 4) Resolve o gatilho (produto + forma de pagamento).
     const { data: gatilhos } = await supabase
       .from("mentoria_gatilhos")
       .select("*")
-      .eq("ativo", true)
-      .order("prioridade", { ascending: false });
+      .eq("ativo", true);
 
     // Produto: match "contém" (tolera variação de nome do CRM).
     const matchContem = (regra: string | null, valor: unknown): boolean => {
@@ -177,11 +176,17 @@ Deno.serve(async (req) => {
       if (!regra) return true; // null/vazio = qualquer
       return norm(valor) === norm(regra);
     };
-    const gatilho = (gatilhos || []).find(
-      (g: any) =>
-        matchContem(g.produto, produto) &&
-        matchExato(g.forma_pagamento, forma_pagamento),
-    );
+    // Entre os gatilhos que casam, vence o MAIS ESPECÍFICO (mais campos preenchidos),
+    // assim uma regra produto+forma ganha de uma regra genérica/fallback.
+    const especificidade = (g: any): number =>
+      (g.produto ? 1 : 0) + (g.forma_pagamento ? 1 : 0);
+    const gatilho = (gatilhos || [])
+      .filter(
+        (g: any) =>
+          matchContem(g.produto, produto) &&
+          matchExato(g.forma_pagamento, forma_pagamento),
+      )
+      .sort((a: any, b: any) => especificidade(b) - especificidade(a))[0];
 
     // 5) Dispara a mensagem (se houver gatilho e telefone).
     const varsMsg: Record<string, unknown> = { ...dados, nome, produto, forma_pagamento, telefone };
