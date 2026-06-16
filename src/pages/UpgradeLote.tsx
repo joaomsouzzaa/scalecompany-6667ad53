@@ -27,39 +27,40 @@ import { supabase } from "@/integrations/supabase/client";
 import { Download, ArrowRight, Search } from "lucide-react";
 import { toast } from "sonner";
 
-// Normaliza e-mail/texto para comparação (sem acento, minúsculo, sem espaços).
+// Normaliza texto p/ comparação (sem acento, minúsculo, sem espaços/hífens).
 const norm = (s: string) =>
+  (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s-]/g, "");
+// Normaliza e-mail (sem acento, minúsculo, trim).
+const normEmail = (s: string) =>
   (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
 // Um produto é "upgrade" quando o nome contém "upgrade".
 const ehUpgrade = (produto: string) => /upgrade/i.test(produto || "");
-
-// Já é um lote VIP? (não precisa alterar)
+// Já é um lote VIP?
 const ehVIP = (batch: string) => /vip\s*$/i.test((batch || "").trim());
 
-// Calcula o lote-alvo VIP a partir do lote atual.
-// Ex.: "Pré-Venda Duplo" -> "Pré-Venda Duplo VIP"
-//      "Lote 1 - Duplo"  -> "Lote 1 Duplo VIP" (remove o " - " com espaços; mantém o hífen de "Pré-Venda")
+// Lote-alvo VIP a partir do lote atual.
+// "Lote 2 - Duplo"   -> "Lote 2 Duplo VIP"  (remove o " - " com espaços)
+// "Pré-Venda Duplo"  -> "Pré-Venda Duplo VIP" (mantém o hífen sem espaços)
 function loteAlvoVIP(batch: string): string {
   return (batch || "").replace(/\s+-\s+/g, " ").trim() + " VIP";
 }
 
-type IngressoRow = {
-  id: string;
-  nome: string | null;
-  email: string | null;
-  batch_name: string | null;
-  order_id: string | null;
-  cidade: string | null;
+type VendaRow = {
+  email_comprador: string | null;
+  produto: string | null;
+  status: string | null;
+  payload: any;
 };
 
 type Linha = {
   id: string;
   nome: string;
   email: string;
+  comprador: string;
   loteAtual: string;
   loteAlvo: string;
-  acao: boolean; // true = precisa alterar
+  acao: boolean;
 };
 
 export default function UpgradeLote() {
@@ -74,67 +75,70 @@ export default function UpgradeLote() {
   });
 
   const [city, setCity] = useState<string>("");
-  const [cidadeNome, setCidadeNome] = useState<string>("");
+  const [cidadeSlug, setCidadeSlug] = useState<string>("");
 
-  // Busca disparada por botão: só roda quando há uma cidade (nome) selecionada.
   const { data, isFetching, refetch, isError } = useQuery({
-    queryKey: ["upgrade-lote", cidadeNome],
+    queryKey: ["upgrade-lote", cidadeSlug],
     enabled: false,
     queryFn: async () => {
-      // Vendas da cidade: precisamos do e-mail e do produto p/ separar normal x upgrade.
-      const { data: vendas, error: ev } = await supabase
+      // Partes do slug da cidade (ex.: "portoalegre, POA") p/ casar com o nome do produto.
+      const partes = cidadeSlug.split(",").map((s) => s.trim()).filter(Boolean);
+      const orFilter = partes.map((p) => `produto.ilike.*${p}*`).join(",");
+      let q = supabase
         .from("vendas")
-        .select("email_comprador, produto, status")
-        .eq("cidade", cidadeNome)
+        .select("email_comprador, produto, status, payload")
+        .eq("status", "aprovada")
         .limit(20000);
-      if (ev) throw ev;
-
-      // Ingressos emitidos da cidade: lote atual por pessoa.
-      const { data: ingressos, error: ei } = await supabase
-        .from("ingressos_emitidos")
-        .select("id, nome, email, batch_name, order_id, cidade")
-        .eq("cidade", cidadeNome)
-        .limit(50000);
-      if (ei) throw ei;
-
-      return { vendas: vendas || [], ingressos: (ingressos || []) as IngressoRow[] };
+      if (orFilter) q = q.or(orFilter);
+      const { data: vendas, error } = await q;
+      if (error) throw error;
+      return (vendas || []) as VendaRow[];
     },
   });
 
   const resultado = useMemo(() => {
     if (!data) return null;
-    const normais = new Set<string>();
-    const upgrades = new Set<string>();
-    for (const v of data.vendas) {
-      const email = norm(v.email_comprador as string);
-      if (!email) continue;
-      if (ehUpgrade(v.produto as string)) upgrades.add(email);
-      else normais.add(email);
-    }
-    // Elegíveis: comprou venda normal E upgrade.
-    const elegiveis = new Set([...upgrades].filter((e) => normais.has(e)));
 
-    const linhas: Linha[] = data.ingressos
-      .filter((i) => {
-        const e = norm(i.email || "");
-        return e && elegiveis.has(e);
-      })
-      .map((i) => {
-        const loteAtual = (i.batch_name || "").trim();
-        const jaVip = ehVIP(loteAtual) || !loteAtual;
-        return {
-          id: i.id,
-          nome: i.nome || "—",
-          email: i.email || "—",
+    // Quem comprou upgrade (por e-mail).
+    const upgrades = new Set<string>();
+    for (const v of data) {
+      if (ehUpgrade(v.produto || "")) {
+        const e = normEmail(v.email_comprador || "");
+        if (e) upgrades.add(e);
+      }
+    }
+
+    // Vendas normais (evento, com lote) de quem também comprou upgrade.
+    const linhas: Linha[] = [];
+    for (const v of data) {
+      if (ehUpgrade(v.produto || "")) continue; // pula os próprios upgrades
+      const compradorEmail = normEmail(v.email_comprador || "");
+      if (!compradorEmail || !upgrades.has(compradorEmail)) continue; // só elegíveis
+
+      const p = v.payload || {};
+      const loteAtual = String(p?.event_batch?.name || "").trim();
+      const jaVip = !loteAtual || ehVIP(loteAtual);
+      const tickets = Array.isArray(p?.event_tickets) && p.event_tickets.length > 0
+        ? p.event_tickets
+        : [{ id: p?.order_id || compradorEmail, name: v.payload?.Customer?.full_name || v.email_comprador, email: v.email_comprador }];
+
+      for (const t of tickets) {
+        linhas.push({
+          id: String(t.id || `${compradorEmail}-${linhas.length}`),
+          nome: t.name || "—",
+          email: t.email || "—",
+          comprador: v.email_comprador || "—",
           loteAtual: loteAtual || "(sem lote)",
           loteAlvo: jaVip ? "—" : loteAlvoVIP(loteAtual),
           acao: !jaVip,
-        };
-      })
-      .sort((a, b) => Number(b.acao) - Number(a.acao) || a.loteAtual.localeCompare(b.loteAtual));
+        });
+      }
+    }
+    linhas.sort((a, b) => Number(b.acao) - Number(a.acao) || a.loteAtual.localeCompare(b.loteAtual));
 
     const aAlterar = linhas.filter((l) => l.acao);
-    // Resumo por lote-alvo.
+    const compradoresElegiveis = new Set(linhas.map((l) => normEmail(l.comprador))).size;
+
     const porLote = new Map<string, { de: string; para: string; qtd: number }>();
     for (const l of aAlterar) {
       const k = `${l.loteAtual}→${l.loteAlvo}`;
@@ -144,7 +148,7 @@ export default function UpgradeLote() {
     }
 
     return {
-      elegiveis: elegiveis.size,
+      compradoresElegiveis,
       linhas,
       aAlterar,
       porLote: [...porLote.values()].sort((a, b) => b.qtd - a.qtd),
@@ -154,8 +158,7 @@ export default function UpgradeLote() {
   const handleBuscar = () => {
     if (!city) { toast.error("Selecione uma cidade"); return; }
     const c = activeCidades.find((x) => x.slug === city);
-    setCidadeNome(c?.nome || "");
-    // refetch após o estado atualizar
+    setCidadeSlug(c?.slug || "");
     setTimeout(() => refetch(), 0);
   };
 
@@ -164,9 +167,9 @@ export default function UpgradeLote() {
       toast.error("Nada a exportar");
       return;
     }
-    const headers = "nome;email;lote_atual;lote_novo";
+    const headers = "nome;email;comprador;lote_atual;lote_novo";
     const linhas = resultado.aAlterar.map(
-      (l) => `${l.nome};${l.email};${l.loteAtual};${l.loteAlvo}`
+      (l) => `${l.nome};${l.email};${l.comprador};${l.loteAtual};${l.loteAlvo}`
     );
     const blob = new Blob(["﻿" + headers + "\n" + linhas.join("\n")], {
       type: "text/csv;charset=utf-8",
@@ -174,7 +177,8 @@ export default function UpgradeLote() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `upgrade-lote-${norm(cidadeNome).replace(/\s+/g, "-") || "cidade"}.csv`;
+    const c = activeCidades.find((x) => x.slug === city);
+    a.download = `upgrade-lote-${(c?.slug || "cidade").replace(/[^\w]+/g, "-")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -205,7 +209,6 @@ export default function UpgradeLote() {
           </header>
 
           <div className="p-6 space-y-4">
-            {/* Filtros */}
             <div className="flex flex-wrap items-center gap-3">
               <Select value={city} onValueChange={setCity}>
                 <SelectTrigger className="w-[240px] bg-card">
@@ -238,7 +241,6 @@ export default function UpgradeLote() {
 
             {!isFetching && resultado && (
               <>
-                {/* KPIs */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <Card>
                     <CardHeader className="pb-2">
@@ -247,7 +249,7 @@ export default function UpgradeLote() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-2xl font-bold">{resultado.elegiveis}</p>
+                      <p className="text-2xl font-bold">{resultado.compradoresElegiveis}</p>
                     </CardContent>
                   </Card>
                   <Card>
@@ -272,7 +274,6 @@ export default function UpgradeLote() {
                   </Card>
                 </div>
 
-                {/* Resumo por lote-alvo */}
                 {resultado.porLote.length > 0 && (
                   <Card>
                     <CardHeader className="pb-2">
@@ -291,13 +292,13 @@ export default function UpgradeLote() {
                   </Card>
                 )}
 
-                {/* Tabela de preview */}
                 <div className="rounded-lg border border-border overflow-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Nome</TableHead>
                         <TableHead>E-mail</TableHead>
+                        <TableHead>Comprador</TableHead>
                         <TableHead>Lote atual</TableHead>
                         <TableHead>Lote-alvo</TableHead>
                         <TableHead>Ação</TableHead>
@@ -306,7 +307,7 @@ export default function UpgradeLote() {
                     <TableBody>
                       {resultado.linhas.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                             Nenhum ingresso de comprador elegível encontrado nesta cidade.
                           </TableCell>
                         </TableRow>
@@ -315,6 +316,7 @@ export default function UpgradeLote() {
                           <TableRow key={l.id}>
                             <TableCell>{l.nome}</TableCell>
                             <TableCell>{l.email}</TableCell>
+                            <TableCell className="text-muted-foreground">{l.comprador}</TableCell>
                             <TableCell>{l.loteAtual}</TableCell>
                             <TableCell>{l.loteAlvo}</TableCell>
                             <TableCell>
