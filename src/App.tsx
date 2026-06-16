@@ -24,6 +24,7 @@ import Modulos from "./pages/Modulos";
 import Performance from "./pages/Performance";
 import Campanhas from "./pages/Campanhas";
 import Email from "./pages/Email";
+import UpgradeLote from "./pages/UpgradeLote";
 import NotFound from "./pages/NotFound";
 
 // Auto-refresh: todas as queries re-buscam a cada 10 min (mesmo sem F5, e em background).
@@ -50,6 +51,7 @@ const App = () => (
           <Route path="/vendas-eventos" element={<VendasEventos />} />
           <Route path="/ingressos-emitidos" element={<IngressosEmitidos />} />
           <Route path="/email" element={<Email />} />
+          <Route path="/upgrade-lote" element={<UpgradeLote />} />
           <Route path="/eventos-geral" element={<DashboardGeral />} />
           <Route path="/integracoes" element={<Integracoes />} />
           <Route path="/inside-sales" element={<InsideSales />} />

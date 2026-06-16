@@ -23,6 +23,7 @@ import {
   Palette,
   LayoutGrid,
   Mail,
+  ArrowUpCircle,
 } from "lucide-react";
 import { useModulos } from "@/hooks/useModulos";
 import { NavLink } from "@/components/NavLink";
@@ -46,6 +47,7 @@ const eventosItems = [
   { title: "Resumo City", url: "/eventos-geral", icon: LayoutDashboard },
   { title: "Vendas", url: "/vendas-eventos", icon: ShoppingCart },
   { title: "Ingressos Emitidos", url: "/ingressos-emitidos", icon: Ticket },
+  { title: "Upgrade de Lote", url: "/upgrade-lote", icon: ArrowUpCircle },
   { title: "E-mail", url: "/email", icon: Mail },
 ];
 
