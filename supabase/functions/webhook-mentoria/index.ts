@@ -67,7 +67,8 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Auth via API key (query param, Bearer header, ou header de webhook).
+  // Auth OPCIONAL: o Clint CRM não envia token no webhook. Só rejeita se houver
+  // uma chave configurada E um token enviado que não confere. Sem token, passa.
   const url = new URL(req.url);
   const queryToken = url.searchParams.get("token");
   const authHeader = req.headers.get("authorization");
@@ -76,7 +77,7 @@ Deno.serve(async (req) => {
   const providedKey = queryToken || bearerToken || webhookToken;
   const expectedKey = Deno.env.get("WEBHOOK_API_KEY");
 
-  if (!expectedKey || providedKey !== expectedKey) {
+  if (expectedKey && providedKey && providedKey !== expectedKey) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -104,10 +105,15 @@ Deno.serve(async (req) => {
       dados[c.label] = getPath(payload, c.caminho) ?? null;
     }
 
-    // Campos canônicos: tenta achar pelos labels conhecidos, senão caminhos comuns.
-    const pick = (labels: string[], paths: string[]): unknown => {
-      for (const l of labels) {
-        const hit = (campos || []).find((c: any) => norm(c.label) === norm(l));
+    // Campos canônicos: procura entre os campos mapeados aquele cujo NOME ou
+    // CAMINHO contém alguma das palavras-chave (tolerante a maiúscula/acento/typo),
+    // e por fim tenta caminhos comuns direto no payload.
+    const pick = (keywords: string[], paths: string[] = []): unknown => {
+      for (const kw of keywords) {
+        const k = norm(kw);
+        const hit = (campos || []).find(
+          (c: any) => norm(c.label).includes(k) || norm(c.caminho).includes(k),
+        );
         if (hit && dados[hit.label] != null) return dados[hit.label];
       }
       for (const p of paths) {
@@ -117,30 +123,31 @@ Deno.serve(async (req) => {
       return null;
     };
 
+    // "produt" cobre "produto" e o typo "porduto"; também casa o caminho deal_tipo_de_produto.
     const produto = pick(
-      ["produto", "product"],
+      ["produt", "product"],
       ["Product.product_name", "Product.name", "product.name", "produto"],
     );
     const forma_pagamento = pick(
-      ["forma_pagamento", "pagamento", "payment_method", "metodo_pagamento"],
+      ["pagamento", "payment", "forma_pag"],
       ["payment_method", "Purchase.PaymentMethod.metodoPagamento", "forma_pagamento"],
     );
     const telefone = pick(
-      ["telefone", "celular", "whatsapp", "phone"],
+      ["telefone", "celular", "whatsapp", "phone", "fone"],
       ["Customer.mobile", "Customer.phone", "customer.phone", "telefone", "phone"],
     );
     const nome = pick(
-      ["nome", "name", "comprador"],
+      ["contact_name", "nome", "name", "comprador"],
       ["Customer.full_name", "Customer.name", "customer.name", "nome", "name"],
     );
     const id_transacao =
-      (pick(["id_transacao", "order_id", "transaction_id"], [
+      (pick(["id_transacao", "order_id", "transaction", "deal_id"], [
         "order_id", "OrderId", "Transaction.id", "id_transacao",
       ]) as string | null) || null;
     const status =
       (pick(["status"], ["order_status", "EventType", "status"]) as string | null) || null;
     const data_venda =
-      (pick(["data_venda", "data"], [
+      (pick(["data_venda", "fechamento", "data"], [
         "approved_date", "created_at", "Purchase.AuthorizedDate",
       ]) as string | null) || new Date().toISOString();
 
