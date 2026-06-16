@@ -213,15 +213,18 @@ Deno.serve(async (req) => {
         const tid = ticketId(part);
         const email = norm(part.email);
 
-        // Já está no banco? (por id do ingresso, ou e-mail como fallback)
-        const jaExiste = (tid && idsBanco.has(tid)) || (email && emailsBanco.has(email));
-        if (jaExiste) { rel.ja_no_banco++; continue; }
-
         if (!ehConvite(part)) {
+          // Venda paga: já no banco? (id do ingresso ou e-mail como fallback).
+          if ((tid && idsBanco.has(tid)) || (email && emailsBanco.has(email))) { rel.ja_no_banco++; continue; }
           // Venda paga ausente: só reporta (não insere — sem valor confiável aqui).
           rel.vendas_faltando.push({ nome: part.name || "", email: part.email || "", order_id: String(part.order_id || "") });
           continue;
         }
+
+        // Convite: dedup SÓ pelo id do ingresso (part.id). Não usa e-mail como
+        // fallback — senão convidado que já tem qualquer outro registro (pago,
+        // importação) era descartado e o dash subcontava convites.
+        if (tid && idsBanco.has(tid)) { rel.ja_no_banco++; continue; }
 
         // Convite faltante → insere.
         const { error } = await supabase.from("vendas").insert({
