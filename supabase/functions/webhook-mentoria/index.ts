@@ -138,10 +138,15 @@ Deno.serve(async (req) => {
     const pick = (keywords: string[], paths: string[] = []): unknown => {
       for (const kw of keywords) {
         const k = norm(kw);
-        const hit = (campos || []).find(
+        // Entre TODOS os campos que casam a palavra-chave, pega o primeiro com VALOR
+        // (ex.: se houver deal_forma_de_pagamento vazio e deal_forma_de_pagamento_1
+        // preenchido, usa o preenchido).
+        const hits = (campos || []).filter(
           (c: any) => norm(c.label).includes(k) || norm(c.caminho).includes(k),
         );
-        if (hit && dados[hit.label] != null) return dados[hit.label];
+        for (const hit of hits) {
+          if (dados[hit.label] != null && String(dados[hit.label]).trim() !== "") return dados[hit.label];
+        }
       }
       for (const p of paths) {
         const v = getPath(payload, p);
