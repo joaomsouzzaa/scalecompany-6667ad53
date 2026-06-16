@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import {
@@ -27,31 +27,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { Download, ArrowRight, Search } from "lucide-react";
 import { toast } from "sonner";
 
-// Normaliza texto p/ comparação (sem acento, minúsculo, sem espaços/hífens).
-const norm = (s: string) =>
-  (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s-]/g, "");
-// Normaliza e-mail (sem acento, minúsculo, trim).
-const normEmail = (s: string) =>
-  (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-
-// Um produto é "upgrade" quando o nome contém "upgrade".
-const ehUpgrade = (produto: string) => /upgrade/i.test(produto || "");
-// Já é um lote VIP?
-const ehVIP = (batch: string) => /vip\s*$/i.test((batch || "").trim());
-
-// Lote-alvo VIP = mesmo nome do lote + " VIP" no final (mantém o hífen como está).
-// "Lote 2 - Duplo" -> "Lote 2 - Duplo VIP"; "Pré-Venda Duplo" -> "Pré-Venda Duplo VIP"
-function loteAlvoVIP(batch: string): string {
-  return (batch || "").trim() + " VIP";
-}
-
-type VendaRow = {
-  email_comprador: string | null;
-  produto: string | null;
-  status: string | null;
-  payload: any;
-};
-
 type Linha = {
   id: string;
   nome: string;
@@ -60,6 +35,17 @@ type Linha = {
   loteAtual: string;
   loteAlvo: string;
   acao: boolean;
+};
+
+type Resultado = {
+  produtos_evento: string[];
+  produtos_upgrade: string[];
+  total_participantes: number;
+  compradores_upgrade: number;
+  compradores_elegiveis: number;
+  ingressos_a_alterar: number;
+  por_lote: { de: string; para: string; qtd: number }[];
+  linhas: Linha[];
 };
 
 export default function UpgradeLote() {
@@ -74,100 +60,33 @@ export default function UpgradeLote() {
   });
 
   const [city, setCity] = useState<string>("");
-  const [cidadeSlug, setCidadeSlug] = useState<string>("");
+  const [buscaKey, setBuscaKey] = useState<number>(0);
 
-  const { data, isFetching, refetch, isError } = useQuery({
-    queryKey: ["upgrade-lote", cidadeSlug],
+  const { data: resultado, isFetching, refetch, isError, error } = useQuery<Resultado>({
+    queryKey: ["upgrade-lote", city, buscaKey],
     enabled: false,
     queryFn: async () => {
-      // Partes do slug da cidade (ex.: "portoalegre, POA") p/ casar com o nome do produto.
-      const partes = cidadeSlug.split(",").map((s) => s.trim()).filter(Boolean);
-      const orFilter = partes.map((p) => `produto.ilike.*${p}*`).join(",");
-      let q = supabase
-        .from("vendas")
-        .select("email_comprador, produto, status, payload")
-        .eq("status", "aprovada")
-        .limit(20000);
-      if (orFilter) q = q.or(orFilter);
-      const { data: vendas, error } = await q;
+      const c = activeCidades.find((x) => x.slug === city);
+      const { data, error } = await supabase.functions.invoke("upgrade-lote", {
+        body: { city_slug: c?.slug || city, city_nome: c?.nome || "" },
+      });
       if (error) throw error;
-      return (vendas || []) as VendaRow[];
+      if (data?.error) throw new Error(data.error);
+      return data as Resultado;
     },
   });
 
-  const resultado = useMemo(() => {
-    if (!data) return null;
-
-    // Quem comprou upgrade (por e-mail).
-    const upgrades = new Set<string>();
-    for (const v of data) {
-      if (ehUpgrade(v.produto || "")) {
-        const e = normEmail(v.email_comprador || "");
-        if (e) upgrades.add(e);
-      }
-    }
-
-    // Vendas normais (evento, com lote) de quem também comprou upgrade.
-    const linhas: Linha[] = [];
-    for (const v of data) {
-      if (ehUpgrade(v.produto || "")) continue; // pula os próprios upgrades
-      const compradorEmail = normEmail(v.email_comprador || "");
-      if (!compradorEmail || !upgrades.has(compradorEmail)) continue; // só elegíveis
-
-      const p = v.payload || {};
-      const loteAtual = String(p?.event_batch?.name || "").trim();
-      const jaVip = !loteAtual || ehVIP(loteAtual);
-      const tickets = Array.isArray(p?.event_tickets) && p.event_tickets.length > 0
-        ? p.event_tickets
-        : [{ id: p?.order_id || compradorEmail, name: v.payload?.Customer?.full_name || v.email_comprador, email: v.email_comprador }];
-
-      for (const t of tickets) {
-        linhas.push({
-          id: String(t.id || `${compradorEmail}-${linhas.length}`),
-          nome: t.name || "—",
-          email: t.email || "—",
-          comprador: v.email_comprador || "—",
-          loteAtual: loteAtual || "(sem lote)",
-          loteAlvo: jaVip ? "—" : loteAlvoVIP(loteAtual),
-          acao: !jaVip,
-        });
-      }
-    }
-    linhas.sort((a, b) => Number(b.acao) - Number(a.acao) || a.loteAtual.localeCompare(b.loteAtual));
-
-    const aAlterar = linhas.filter((l) => l.acao);
-    const compradoresElegiveis = new Set(linhas.map((l) => normEmail(l.comprador))).size;
-
-    const porLote = new Map<string, { de: string; para: string; qtd: number }>();
-    for (const l of aAlterar) {
-      const k = `${l.loteAtual}→${l.loteAlvo}`;
-      const cur = porLote.get(k) || { de: l.loteAtual, para: l.loteAlvo, qtd: 0 };
-      cur.qtd++;
-      porLote.set(k, cur);
-    }
-
-    return {
-      compradoresElegiveis,
-      linhas,
-      aAlterar,
-      porLote: [...porLote.values()].sort((a, b) => b.qtd - a.qtd),
-    };
-  }, [data]);
-
   const handleBuscar = () => {
     if (!city) { toast.error("Selecione uma cidade"); return; }
-    const c = activeCidades.find((x) => x.slug === city);
-    setCidadeSlug(c?.slug || "");
+    setBuscaKey((k) => k + 1);
     setTimeout(() => refetch(), 0);
   };
 
   const exportarCSV = () => {
-    if (!resultado || resultado.aAlterar.length === 0) {
-      toast.error("Nada a exportar");
-      return;
-    }
+    const aAlterar = (resultado?.linhas || []).filter((l) => l.acao);
+    if (aAlterar.length === 0) { toast.error("Nada a exportar"); return; }
     const headers = "nome;email;comprador;lote_atual;lote_novo";
-    const linhas = resultado.aAlterar.map(
+    const linhas = aAlterar.map(
       (l) => `${l.nome};${l.email};${l.comprador};${l.loteAtual};${l.loteAlvo}`
     );
     const blob = new Blob(["﻿" + headers + "\n" + linhas.join("\n")], {
@@ -182,6 +101,8 @@ export default function UpgradeLote() {
     URL.revokeObjectURL(url);
   };
 
+  const aAlterar = (resultado?.linhas || []).filter((l) => l.acao).length;
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
@@ -192,15 +113,11 @@ export default function UpgradeLote() {
             <div>
               <h1 className="text-xl font-bold tracking-tight">Upgrade de Lote</h1>
               <p className="text-sm text-muted-foreground">
-                Quem comprou a venda normal + o upgrade — preview da troca de lote para VIP
+                Dados ao vivo da Kiwify — quem comprou normal + upgrade, para trocar o lote para VIP
               </p>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={exportarCSV}
-                disabled={!resultado || resultado.aAlterar.length === 0}
-              >
+              <Button variant="outline" onClick={exportarCSV} disabled={aAlterar === 0}>
                 <Download className="mr-2 h-4 w-4" />
                 Exportar CSV
               </Button>
@@ -223,12 +140,14 @@ export default function UpgradeLote() {
               </Select>
               <Button onClick={handleBuscar} disabled={isFetching}>
                 <Search className="mr-2 h-4 w-4" />
-                {isFetching ? "Buscando..." : "Buscar"}
+                {isFetching ? "Buscando na Kiwify..." : "Buscar"}
               </Button>
             </div>
 
             {isError && (
-              <p className="text-sm text-destructive">Erro ao buscar os dados. Tente novamente.</p>
+              <p className="text-sm text-destructive">
+                Erro ao buscar na Kiwify: {(error as Error)?.message || "tente novamente"}
+              </p>
             )}
 
             {isFetching && (
@@ -240,46 +159,46 @@ export default function UpgradeLote() {
 
             {!isFetching && resultado && (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                   <Card>
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm text-muted-foreground">
-                        Compradores elegíveis (normal + upgrade)
-                      </CardTitle>
+                      <CardTitle className="text-sm text-muted-foreground">Compradores de upgrade</CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <p className="text-2xl font-bold">{resultado.compradoresElegiveis}</p>
-                    </CardContent>
+                    <CardContent><p className="text-2xl font-bold">{resultado.compradores_upgrade}</p></CardContent>
                   </Card>
                   <Card>
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm text-muted-foreground">
-                        Ingressos a alterar
-                      </CardTitle>
+                      <CardTitle className="text-sm text-muted-foreground">Compradores elegíveis</CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <p className="text-2xl font-bold">{resultado.aAlterar.length}</p>
-                    </CardContent>
+                    <CardContent><p className="text-2xl font-bold">{resultado.compradores_elegiveis}</p></CardContent>
                   </Card>
                   <Card>
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm text-muted-foreground">
-                        Lotes-alvo distintos
-                      </CardTitle>
+                      <CardTitle className="text-sm text-muted-foreground">Ingressos a alterar</CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <p className="text-2xl font-bold">{resultado.porLote.length}</p>
-                    </CardContent>
+                    <CardContent><p className="text-2xl font-bold">{aAlterar}</p></CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm text-muted-foreground">Lotes-alvo distintos</CardTitle>
+                    </CardHeader>
+                    <CardContent><p className="text-2xl font-bold">{resultado.por_lote.length}</p></CardContent>
                   </Card>
                 </div>
 
-                {resultado.porLote.length > 0 && (
+                {resultado.produtos_evento?.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Evento: {resultado.produtos_evento.join(", ")} · Upgrade: {resultado.produtos_upgrade.join(", ") || "—"} · Participantes: {resultado.total_participantes}
+                  </p>
+                )}
+
+                {resultado.por_lote.length > 0 && (
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm">Resumo por lote</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-1">
-                      {resultado.porLote.map((p) => (
+                      {resultado.por_lote.map((p) => (
                         <div key={`${p.de}-${p.para}`} className="flex items-center gap-2 text-sm">
                           <span className="text-muted-foreground">{p.de}</span>
                           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -319,11 +238,7 @@ export default function UpgradeLote() {
                             <TableCell>{l.loteAtual}</TableCell>
                             <TableCell>{l.loteAlvo}</TableCell>
                             <TableCell>
-                              {l.acao ? (
-                                <Badge>Alterar</Badge>
-                              ) : (
-                                <Badge variant="secondary">Sem ação</Badge>
-                              )}
+                              {l.acao ? <Badge>Alterar</Badge> : <Badge variant="secondary">Sem ação</Badge>}
                             </TableCell>
                           </TableRow>
                         ))
