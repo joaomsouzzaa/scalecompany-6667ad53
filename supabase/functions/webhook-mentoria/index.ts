@@ -165,14 +165,21 @@ Deno.serve(async (req) => {
       .eq("ativo", true)
       .order("prioridade", { ascending: false });
 
-    const matchOpcional = (regra: string | null, valor: unknown): boolean => {
+    // Produto: match "contém" (tolera variação de nome do CRM).
+    const matchContem = (regra: string | null, valor: unknown): boolean => {
       if (!regra) return true; // null/vazio = qualquer
       return norm(valor).includes(norm(regra));
     };
+    // Forma de pagamento: match EXATO. Cada venda tem um único valor (ex: "Cartão"
+    // ou "Cartão + Boleto"), então "Cartão" NÃO deve casar com "Espécie + Cartão".
+    const matchExato = (regra: string | null, valor: unknown): boolean => {
+      if (!regra) return true; // null/vazio = qualquer
+      return norm(valor) === norm(regra);
+    };
     const gatilho = (gatilhos || []).find(
       (g: any) =>
-        matchOpcional(g.produto, produto) &&
-        matchOpcional(g.forma_pagamento, forma_pagamento),
+        matchContem(g.produto, produto) &&
+        matchExato(g.forma_pagamento, forma_pagamento),
     );
 
     // 5) Dispara a mensagem (se houver gatilho e telefone).
