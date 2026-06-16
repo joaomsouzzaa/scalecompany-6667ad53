@@ -90,7 +90,23 @@ Deno.serve(async (req) => {
   );
 
   try {
-    const payload = await req.json();
+    // Leitura resiliente do corpo: aceita JSON, form-encoded ou JSON dentro de form.
+    const rawBody = await req.text();
+    console.log("webhook-mentoria RAW PAYLOAD:", rawBody);
+    let payload: Record<string, unknown> = {};
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      const params = new URLSearchParams(rawBody);
+      // Alguns CRMs mandam tudo dentro de um campo (ex: payload=...{json}...).
+      const wrapped = params.get("payload") || params.get("data") || params.get("body");
+      if (wrapped) {
+        try { payload = JSON.parse(wrapped); } catch { payload = { [wrapped]: true }; }
+      } else {
+        payload = Object.fromEntries(params.entries());
+      }
+    }
+    console.log("webhook-mentoria PAYLOAD PARSED keys:", Object.keys(payload).join(", "));
 
     // 1) Carrega campos mapeados (definem as colunas e as variáveis).
     const { data: campos } = await supabase
