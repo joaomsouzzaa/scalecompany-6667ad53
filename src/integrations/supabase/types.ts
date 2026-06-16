@@ -358,6 +358,74 @@ export type Database = {
         }
         Relationships: []
       }
+      ingressos_emitidos: {
+        Row: {
+          batch_name: string | null
+          checkin_at: string | null
+          cidade: string | null
+          cpf: string | null
+          created_at: string
+          data_venda: string
+          email: string | null
+          external_id: string | null
+          id: string
+          ingresso_id: string | null
+          nome: string | null
+          order_id: string | null
+          plataforma: string | null
+          status: string
+          telefone: string | null
+          tipo_ingresso: string | null
+          venda_id: string | null
+        }
+        Insert: {
+          batch_name?: string | null
+          checkin_at?: string | null
+          cidade?: string | null
+          cpf?: string | null
+          created_at?: string
+          data_venda?: string
+          email?: string | null
+          external_id?: string | null
+          id?: string
+          ingresso_id?: string | null
+          nome?: string | null
+          order_id?: string | null
+          plataforma?: string | null
+          status?: string
+          telefone?: string | null
+          tipo_ingresso?: string | null
+          venda_id?: string | null
+        }
+        Update: {
+          batch_name?: string | null
+          checkin_at?: string | null
+          cidade?: string | null
+          cpf?: string | null
+          created_at?: string
+          data_venda?: string
+          email?: string | null
+          external_id?: string | null
+          id?: string
+          ingresso_id?: string | null
+          nome?: string | null
+          order_id?: string | null
+          plataforma?: string | null
+          status?: string
+          telefone?: string | null
+          tipo_ingresso?: string | null
+          venda_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ingressos_emitidos_venda_id_fkey"
+            columns: ["venda_id"]
+            isOneToOne: false
+            referencedRelation: "vendas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       insights_trafego: {
         Row: {
           cidade_slug: string
@@ -1076,6 +1144,39 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      buscar_ingressos_emitidos: {
+        Args: {
+          p_city_slug?: string
+          p_end: string
+          p_start: string
+          p_status: string
+        }
+        Returns: {
+          batch_name: string | null
+          checkin_at: string | null
+          cidade: string | null
+          cpf: string | null
+          created_at: string
+          data_venda: string
+          email: string | null
+          external_id: string | null
+          id: string
+          ingresso_id: string | null
+          nome: string | null
+          order_id: string | null
+          plataforma: string | null
+          status: string
+          telefone: string | null
+          tipo_ingresso: string | null
+          venda_id: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "ingressos_emitidos"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       buscar_vendas: {
         Args: {
           p_city_slug?: string

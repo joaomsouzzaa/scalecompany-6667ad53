@@ -169,7 +169,7 @@ const Index = () => {
     return eventDate >= today;
   });
 
-  const entrarTvMode = async (layout: "16:9" | "3:1") => {
+  const entrarTvMode = async (layout: "16:9" | "2:1" | "3:1") => {
     setTvLayout(layout);
     try { await document.documentElement.requestFullscreen(); } catch {}
     setTvMode(true);
