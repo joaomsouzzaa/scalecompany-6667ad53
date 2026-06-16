@@ -322,6 +322,9 @@ Deno.serve(async (req) => {
     };
 
     let inseridos = 0;
+    // Janela de processamento: últimas 72h (sync diário leve).
+    const JANELA_HORAS = 72;
+    const CUTOFF_MS = Date.now() - JANELA_HORAS * 3600 * 1000;
     // Acumula participantes p/ gravar ingressos_emitidos EM LOTE no fim (upsert
     // por participante estourava o timeout de 150s).
     const partsTodos: { part: any; cidadeNome: string }[] = [];
@@ -333,6 +336,11 @@ Deno.serve(async (req) => {
 
       const rel = relDe(cidade.nome);
       for (const part of participantes) {
+        // Janela de 72h: processa só participantes criados nas últimas 72h
+        // (sync diário leve). Histórico antigo já está no banco.
+        const criado = part.created_at ? Date.parse(part.created_at) : NaN;
+        if (!Number.isNaN(criado) && criado < CUTOFF_MS) continue;
+
         rel.kiwify_total++;
         const tid = ticketId(part);
         const email = norm(part.email);
@@ -380,18 +388,22 @@ Deno.serve(async (req) => {
     }
 
     // Ingressos emitidos EM LOTE: 1 linha por participante (resolve venda_id
-    // agora que os convites já foram inseridos). Upsert por ingresso_id.
-    const ingRows: any[] = [];
+    // agora que os convites já foram inseridos). Dedup por ingresso_id — a
+    // Kiwify às vezes lista o mesmo participante 2x, e o upsert quebra com
+    // ingresso_id repetido no mesmo comando.
+    const ingMap = new Map<string, any>();
     const ordersComTicket = new Set<string>();
     for (const { part, cidadeNome } of partsTodos) {
       const tid = ticketId(part);
       const vId = (tid && idToVenda.get(tid)) || null;
-      ingRows.push(ingressoDeParticipante(part, cidadeNome, vId));
+      const row = ingressoDeParticipante(part, cidadeNome, vId);
+      if (row.ingresso_id) ingMap.set(row.ingresso_id, row);
       if (part.order_id) ordersComTicket.add(String(part.order_id));
     }
+    const ingRows = [...ingMap.values()];
     const CHUNK = 500;
     for (let i = 0; i < ingRows.length; i += CHUNK) {
-      try { await supabase.from("ingressos_emitidos").upsert(ingRows.slice(i, i + CHUNK), { onConflict: "ingresso_id", ignoreDuplicates: false }); } catch (_) { /* segue */ }
+      try { await supabase.from("ingressos_emitidos").upsert(ingRows.slice(i, i + CHUNK), { onConflict: "ingresso_id", ignoreDuplicates: false }); } catch (e) { console.log("upsert ingressos falhou:", (e as any)?.message || e); }
     }
     // Remove fallback (sem ingresso_id) dos pedidos que agora têm nome real.
     const orders = [...ordersComTicket];
