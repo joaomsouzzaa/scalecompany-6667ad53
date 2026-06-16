@@ -16,10 +16,15 @@ function getPath(obj: unknown, caminho: string): unknown {
 }
 
 // Substitui {{var}} pelos valores do mapa (chave = label do campo mapeado).
+// Aceita nomes com espaço/acento (ex: {{Razão Social}}) e faz match
+// case/acento-insensível, então {{nome}} e {{Nome}} resolvem igual.
 function render(template: string, vars: Record<string, unknown>): string {
-  return template.replace(/\{\{\s*([\w-]+)\s*\}\}/g, (_, k) =>
-    vars[k] != null ? String(vars[k]) : "",
-  );
+  const idx = new Map<string, unknown>();
+  for (const [k, v] of Object.entries(vars)) idx.set(norm(k), v);
+  return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, k) => {
+    const v = idx.get(norm(k));
+    return v != null ? String(v) : "";
+  });
 }
 
 function norm(s: unknown): string {
