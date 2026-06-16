@@ -64,6 +64,7 @@ type Venda = {
   telefone: string | null;
   nome: string | null;
   dados: Record<string, unknown>;
+  payload: Record<string, unknown> | null;
   mensagem_enviada: boolean;
   mensagem_status: string | null;
   data_venda: string | null;
@@ -230,7 +231,7 @@ const MentoriaVendas = () => {
         open={mapOpen}
         onOpenChange={setMapOpen}
         campos={campos}
-        lastPayload={(vendas[0]?.dados as Record<string, unknown>) || null}
+        lastPayload={vendas[0]?.payload || null}
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ["mentoria-campos"] });
         }}
@@ -327,9 +328,21 @@ function MapearCamposDialog({
         </div>
 
         {lastPayload && Object.keys(lastPayload).length > 0 && (
-          <p className="text-xs text-muted-foreground">
-            Campos da última venda: {Object.keys(lastPayload).join(", ")}
-          </p>
+          <div className="rounded-md border bg-muted/40 p-2 max-h-40 overflow-y-auto">
+            <p className="text-xs font-medium mb-1">
+              Campos recebidos no último webhook (use como "Caminho"):
+            </p>
+            <div className="space-y-0.5">
+              {Object.entries(lastPayload).map(([k, v]) => (
+                <div key={k} className="text-xs flex gap-2">
+                  <code className="text-foreground shrink-0">{k}</code>
+                  <span className="text-muted-foreground truncate">
+                    = {v == null ? "—" : String(v)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         <div className="grid grid-cols-2 gap-2 items-end border-t pt-4">
