@@ -325,6 +325,93 @@ export type Database = {
         }
         Relationships: []
       }
+      email_config: {
+        Row: {
+          from_name: string | null
+          id: number
+          imap_host: string | null
+          imap_port: number | null
+          password: string | null
+          smtp_host: string | null
+          smtp_port: number | null
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          from_name?: string | null
+          id?: number
+          imap_host?: string | null
+          imap_port?: number | null
+          password?: string | null
+          smtp_host?: string | null
+          smtp_port?: number | null
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          from_name?: string | null
+          id?: number
+          imap_host?: string | null
+          imap_port?: number | null
+          password?: string | null
+          smtp_host?: string | null
+          smtp_port?: number | null
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
+      email_mensagens: {
+        Row: {
+          body: string | null
+          body_html: string | null
+          created_at: string
+          draft_reply: string | null
+          from_email: string | null
+          from_name: string | null
+          id: string
+          message_id: string | null
+          received_at: string | null
+          replied_at: string | null
+          status: string
+          subject: string | null
+          to_email: string | null
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          body_html?: string | null
+          created_at?: string
+          draft_reply?: string | null
+          from_email?: string | null
+          from_name?: string | null
+          id?: string
+          message_id?: string | null
+          received_at?: string | null
+          replied_at?: string | null
+          status?: string
+          subject?: string | null
+          to_email?: string | null
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          body_html?: string | null
+          created_at?: string
+          draft_reply?: string | null
+          from_email?: string | null
+          from_name?: string | null
+          id?: string
+          message_id?: string | null
+          received_at?: string | null
+          replied_at?: string | null
+          status?: string
+          subject?: string | null
+          to_email?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       google_config: {
         Row: {
           access_token: string | null
@@ -897,6 +984,24 @@ export type Database = {
           logo_posicao?: string
           nome?: string
           palavras_chave?: string | null
+        }
+        Relationships: []
+      }
+      settings: {
+        Row: {
+          key: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: string
         }
         Relationships: []
       }
