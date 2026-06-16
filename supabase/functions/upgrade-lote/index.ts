@@ -1,4 +1,10 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Edge function "upgrade-lote" — 100% AO VIVO na Kiwify, sem usar o nosso banco.
+// Fluxo:
+//   1. Lista todas as VENDAS da cidade nos últimos 90 dias (produtos de evento).
+//   2. Vê quais desses COMPRADORES (customer.email) também compraram o UPGRADE
+//      da mesma cidade nos últimos 90 dias.
+//   3. Para os pedidos casados, pega os INGRESSOS gerados (participants: nome,
+//      e-mail, lote atual) e lista com o novo lote VIP.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,23 +13,20 @@ const corsHeaders = {
 
 const BASE = "https://public-api.kiwify.com/v1";
 
-function svc() {
-  return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-}
-
-// Normaliza texto p/ casar produto x slug da cidade (sem acento, sem espaço/hífen).
 const norm = (s: string) =>
   (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s-]/g, "");
-// Normaliza e-mail (sem acento, minúsculo, trim).
 const normEmail = (s: string) =>
   (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
 const ehUpgrade = (nome: string) => /upgrade/i.test(nome || "");
 const ehVIP = (batch: string) => /vip\s*$/i.test((batch || "").trim());
-// Lote-alvo = mesmo nome + " VIP" no final (preserva o hífen).
-const loteAlvoVIP = (batch: string) => (batch || "").trim() + " VIP";
+// Lote-alvo = mesmo nome SEM os separadores " - " / " | " + sufixo " VIP".
+//   "Lote 2 - Duplo"      -> "Lote 2 Duplo VIP"
+//   "Lote 1 - Individual" -> "Lote 1 Individual VIP"
+//   "Pré-Venda | Duplo"   -> "Pré-Venda Duplo VIP"  (mantém o hífen de "Pré-Venda")
+const loteAlvoVIP = (batch: string) =>
+  (batch || "").replace(/\s+[|\-–—]\s+/g, " ").replace(/\s{2,}/g, " ").trim() + " VIP";
 
-// OAuth client credentials → access_token.
 async function getToken(): Promise<string> {
   const id = Deno.env.get("KIWIFY_CLIENT_ID");
   const secret = Deno.env.get("KIWIFY_CLIENT_SECRET");
@@ -46,8 +49,8 @@ function authHeaders(token: string) {
   };
 }
 
-// Lista paginada onde data é ARRAY (ex.: /products, /sales).
-async function listarTudo(path: string, token: string, maxPages = 50): Promise<any[]> {
+// Lista paginada onde data é ARRAY (/products, /sales).
+async function listarTudo(path: string, token: string, maxPages = 100): Promise<any[]> {
   const out: any[] = [];
   for (let page = 1; page <= maxPages; page++) {
     const sep = path.includes("?") ? "&" : "?";
@@ -63,7 +66,7 @@ async function listarTudo(path: string, token: string, maxPages = 50): Promise<a
 }
 
 // Participantes de um evento: { data: { participants: [...] } }.
-async function listarParticipantes(productId: string, token: string, maxPages = 50): Promise<any[]> {
+async function listarParticipantes(productId: string, token: string, maxPages = 100): Promise<any[]> {
   const out: any[] = [];
   for (let page = 1; page <= maxPages; page++) {
     const r = await fetch(`${BASE}/events/${productId}/participants?page_size=100&page_number=${page}`, { headers: authHeaders(token) });
@@ -77,22 +80,13 @@ async function listarParticipantes(productId: string, token: string, maxPages = 
   return out;
 }
 
-// Vendas de um produto nos últimos `dias` (janelas de 90 dias — limite da API).
-async function listarVendasProduto(productId: string, token: string, dias = 180): Promise<any[]> {
-  const out: any[] = [];
+// Vendas de um produto nos últimos 90 dias (janela única — limite da API).
+async function listarVendasProduto(productId: string, token: string): Promise<any[]> {
   const fim = new Date();
-  const ini = new Date(fim.getTime() - dias * 24 * 3600 * 1000);
-  // Quebra em janelas de até 90 dias.
-  let janIni = new Date(ini);
-  while (janIni < fim) {
-    const janFim = new Date(Math.min(janIni.getTime() + 89 * 24 * 3600 * 1000, fim.getTime()));
-    const sd = janIni.toISOString().slice(0, 10);
-    const ed = janFim.toISOString().slice(0, 10);
-    const vendas = await listarTudo(`/sales?product_id=${productId}&start_date=${sd}&end_date=${ed}`, token);
-    out.push(...vendas);
-    janIni = new Date(janFim.getTime() + 24 * 3600 * 1000);
-  }
-  return out;
+  const ini = new Date(fim.getTime() - 89 * 24 * 3600 * 1000);
+  const sd = ini.toISOString().slice(0, 10);
+  const ed = fim.toISOString().slice(0, 10);
+  return await listarTudo(`/sales?product_id=${productId}&start_date=${sd}&end_date=${ed}`, token);
 }
 
 Deno.serve(async (req) => {
@@ -122,7 +116,7 @@ Deno.serve(async (req) => {
     const produtosUpgrade = produtosCidade.filter((p: any) => ehUpgrade(p.name || ""));
     const produtosEvento = produtosCidade.filter((p: any) => !ehUpgrade(p.name || ""));
 
-    // E-mails de quem comprou UPGRADE (status pago).
+    // (2) E-mails de quem comprou UPGRADE da cidade (90 dias).
     const upgradeEmails = new Set<string>();
     for (const pu of produtosUpgrade) {
       const vendas = await listarVendasProduto(pu.id, token);
@@ -133,16 +127,22 @@ Deno.serve(async (req) => {
       }
     }
 
-    // order_id → e-mail do comprador, das vendas do(s) produto(s) de evento.
+    // (1) Vendas da cidade (evento) nos 90 dias → pedidos cujo COMPRADOR também
+    // comprou upgrade. order_id (sale.id) → e-mail do comprador.
+    const pedidosElegiveis = new Set<string>();
     const orderToBuyer = new Map<string, string>();
     for (const pe of produtosEvento) {
       const vendas = await listarVendasProduto(pe.id, token);
       for (const v of vendas) {
-        if (v.id) orderToBuyer.set(String(v.id), normEmail(v.customer?.email || ""));
+        if (v.status && v.status !== "paid") continue;
+        const buyer = normEmail(v.customer?.email || "");
+        const oid = v.id ? String(v.id) : "";
+        if (oid) orderToBuyer.set(oid, buyer);
+        if (oid && buyer && upgradeEmails.has(buyer)) pedidosElegiveis.add(oid);
       }
     }
 
-    // Participantes (lote real) dos produtos de evento.
+    // (3) Ingressos gerados (participants) dos pedidos elegíveis.
     const rows: any[] = [];
     let totalParticipantes = 0;
     const vistos = new Set<string>();
@@ -153,17 +153,16 @@ Deno.serve(async (req) => {
         if (part.id) vistos.add(String(part.id));
         totalParticipantes++;
 
-        const compradorEmail = orderToBuyer.get(String(part.order_id)) || normEmail(part.email || "");
-        const ehElegivel = upgradeEmails.has(compradorEmail) || upgradeEmails.has(normEmail(part.email || ""));
-        if (!ehElegivel) continue;
+        const oid = String(part.order_id || "");
+        if (!pedidosElegiveis.has(oid)) continue;
 
         const loteAtual = String(part.batch_name || "").trim();
         const jaVip = !loteAtual || ehVIP(loteAtual);
         rows.push({
-          id: String(part.id || `${part.order_id}-${rows.length}`),
+          id: String(part.id || `${oid}-${rows.length}`),
           nome: part.name || "—",
           email: part.email || "—",
-          comprador: compradorEmail || "—",
+          comprador: orderToBuyer.get(oid) || "—",
           loteAtual: loteAtual || "(sem lote)",
           loteAlvo: jaVip ? "—" : loteAlvoVIP(loteAtual),
           acao: !jaVip,
@@ -190,6 +189,7 @@ Deno.serve(async (req) => {
       produtos_upgrade: produtosUpgrade.map((p: any) => p.name),
       total_participantes: totalParticipantes,
       compradores_upgrade: upgradeEmails.size,
+      pedidos_elegiveis: pedidosElegiveis.size,
       compradores_elegiveis: compradoresElegiveis,
       ingressos_a_alterar: aAlterar.length,
       por_lote: [...porLoteMap.values()].sort((a, b) => b.qtd - a.qtd),
