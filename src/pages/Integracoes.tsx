@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plug, Wifi, WifiOff, Loader2, ShoppingCart, Copy, Check, Users, Sheet } from "lucide-react";
+import { Plug, Wifi, WifiOff, Loader2, ShoppingCart, Copy, Check, Users, Sheet, GraduationCap } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,7 @@ import { exchangeForLongLivedToken, isTokenExpired, clearTokenExpired, clearAdAc
 
 const WEBHOOK_VENDAS_URL = "https://dobexeqizssojpzuhkfn.supabase.co/functions/v1/webhook-vendas";
 const WEBHOOK_LEADS_URL = "https://dobexeqizssojpzuhkfn.supabase.co/functions/v1/webhook-leads";
+const WEBHOOK_MENTORIA_URL = "https://dobexeqizssojpzuhkfn.supabase.co/functions/v1/webhook-mentoria";
 
 const WebhookSection = () => {
   const [copied, setCopied] = useState(false);
@@ -101,6 +102,47 @@ const CrmWebhookSection = () => {
         </div>
         <p className="text-xs text-muted-foreground">
           Envie um POST com os campos: <code className="text-xs">nome</code>, <code className="text-xs">email</code>, <code className="text-xs">telefone</code>, <code className="text-xs">status</code> (lead, mql, sql, reuniao_agendada, reuniao_realizada, venda), <code className="text-xs">utm_medium</code>, <code className="text-xs">campaign_name</code>, <code className="text-xs">cidade</code>. Autenticação via header <code className="text-xs">x-webhook-token</code>.
+        </p>
+      </CardContent>
+    </Card>
+  );
+};
+
+const MentoriaWebhookSection = () => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(WEBHOOK_MENTORIA_URL);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-[hsl(var(--warning))]/10 flex items-center justify-center">
+            <GraduationCap className="h-5 w-5 text-[hsl(var(--warning))]" />
+          </div>
+          <div>
+            <CardTitle className="text-base">Vendas de Mentoria</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Cole esta URL no webhook da plataforma de vendas dos produtos de mentoria (não ingressos).
+            </p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-3">
+        <div className="flex items-center gap-2">
+          <code className="flex-1 rounded-md bg-muted px-3 py-2 text-sm font-mono text-foreground break-all select-all">
+            {WEBHOOK_MENTORIA_URL}
+          </code>
+          <Button variant="outline" size="icon" onClick={handleCopy} className="shrink-0">
+            {copied ? <Check className="h-4 w-4 text-[hsl(var(--success))]" /> : <Copy className="h-4 w-4" />}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Autenticação via <code className="text-xs">?token=SUA_CHAVE</code> na URL ou header <code className="text-xs">x-webhook-token</code>. As vendas aparecem em <strong>Inside Sales → Vendas</strong>, onde você mapeia os campos e configura os gatilhos de mensagem.
         </p>
       </CardContent>
     </Card>
@@ -359,6 +401,9 @@ const Integracoes = () => {
 
             {/* CRM — Leads */}
             <CrmWebhookSection />
+
+            {/* Vendas de Mentoria */}
+            <MentoriaWebhookSection />
 
             {/* Google Sheets */}
             <GoogleSheetsSection />
