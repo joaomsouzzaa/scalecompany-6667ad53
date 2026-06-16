@@ -7,6 +7,7 @@ import { SaleNotificationBanner } from "@/components/SaleNotificationBanner";
 import Index from "./pages/Index";
 import Integracoes from "./pages/Integracoes";
 import VendasEventos from "./pages/VendasEventos";
+import IngressosEmitidos from "./pages/IngressosEmitidos";
 import CadastroCidades from "./pages/CadastroCidades";
 import DashboardGeral from "./pages/DashboardGeral";
 import InsideSales from "./pages/InsideSales";
@@ -45,6 +46,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/vendas-eventos" element={<VendasEventos />} />
+          <Route path="/ingressos-emitidos" element={<IngressosEmitidos />} />
           <Route path="/eventos-geral" element={<DashboardGeral />} />
           <Route path="/integracoes" element={<Integracoes />} />
           <Route path="/inside-sales" element={<InsideSales />} />

@@ -175,7 +175,7 @@ Deno.serve(async (req) => {
     await resolveUpgradeQuantity(supabase, venda);
 
     // Otherwise insert as new record
-    const { error } = await supabase.from("vendas").insert(venda);
+    const { data: inserida, error } = await supabase.from("vendas").insert(venda).select("id").single();
 
     if (error) {
       console.error("[Webhook Error]", { timestamp: new Date().toISOString(), code: error.code, message: error.message });
@@ -184,6 +184,9 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Grava 1 linha por pessoa em ingressos_emitidos (event_tickets ou fallback).
+    await gravarIngressos(supabase, inserida?.id || null, venda, payload);
 
     // Se chegou a compra principal, atualiza upgrades já existentes desse
     // comprador/cidade para refletirem a quantidade correta (ordem inversa).
@@ -204,6 +207,61 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+// Grava 1 linha por pessoa em ingressos_emitidos. Para Kiwify usa
+// payload.event_tickets[] (nome real por pessoa); senão gera `quantidade`
+// linhas (1ª com o comprador, demais "(nome não informado)").
+async function gravarIngressos(
+  supabase: any,
+  vendaId: string | null,
+  venda: Record<string, unknown>,
+  payload: any,
+) {
+  try {
+    const orderId = (venda.id_transacao as string | null) || null;
+    const base = {
+      venda_id: vendaId,
+      order_id: orderId,
+      cidade: (venda.cidade as string | null) || null,
+      tipo_ingresso: (venda.tipo_ingresso as string | null) || null,
+      plataforma: (venda.plataforma as string | null) || null,
+      status: (venda.status as string) || "aprovada",
+      data_venda: (venda.data_venda as string) || new Date().toISOString(),
+    };
+
+    const tickets = Array.isArray(payload?.event_tickets) ? payload.event_tickets : [];
+    if (tickets.length > 0) {
+      const rows = tickets.map((t: any) => ({
+        ...base,
+        ingresso_id: t.id != null ? String(t.id) : null,
+        external_id: t.external_id || null,
+        nome: t.name || null,
+        email: t.email || null,
+        telefone: t.phone || null,
+        cpf: t.cpf || null,
+        batch_name: t.batch_name || null,
+      }));
+      await supabase.from("ingressos_emitidos").upsert(rows, { onConflict: "ingresso_id", ignoreDuplicates: false });
+      return;
+    }
+
+    // Fallback sem nomes por pessoa: gera `quantidade` linhas.
+    const qtd = Math.max(1, Number(venda.quantidade) || 1);
+    const rows = Array.from({ length: qtd }, (_, i) => ({
+      ...base,
+      ingresso_id: null,
+      external_id: null,
+      nome: i === 0 ? (venda.nome_comprador as string | null) || null : "(nome não informado)",
+      email: i === 0 ? (venda.email_comprador as string | null) || null : null,
+      telefone: i === 0 ? (venda.telefone_comprador as string | null) || null : null,
+      cpf: (venda.documento as string | null) || null,
+      batch_name: null,
+    }));
+    await supabase.from("ingressos_emitidos").insert(rows);
+  } catch (e) {
+    console.log("gravarIngressos falhou:", (e as any)?.message || e);
+  }
+}
 
 function isUpgradeProduto(nome: unknown): boolean {
   return typeof nome === "string" && nome.toLowerCase().includes("upgrade");

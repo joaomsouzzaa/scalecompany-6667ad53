@@ -83,6 +83,27 @@ function ticketId(part: any): string | null {
   return id != null ? String(id) : null;
 }
 
+// Monta a linha de ingressos_emitidos a partir de um participante da Kiwify.
+function ingressoDeParticipante(part: any, cidadeNome: string, vendaId: string | null) {
+  return {
+    venda_id: vendaId,
+    order_id: part.order_id ? String(part.order_id) : (ehConvite(part) && part.id ? String(part.id) : null),
+    ingresso_id: part.id != null ? String(part.id) : null,
+    external_id: part.external_id || null,
+    nome: part.name || null,
+    email: part.email || null,
+    telefone: part.phone || null,
+    cpf: part.cpf || null,
+    cidade: cidadeNome,
+    tipo_ingresso: ehConvite(part) ? "convite" : null,
+    plataforma: "kiwify",
+    batch_name: part.batch_name || null,
+    status: "aprovada",
+    data_venda: part.created_at || new Date().toISOString(),
+    checkin_at: part.checkin_at || null,
+  };
+}
+
 const fmtSP = () => new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
 // Envia o relatório (com chunking) via função uazapi → action "send".
@@ -159,13 +180,92 @@ function montarRelatorio(rels: CidadeRel[], cidadesAtivas: number): string {
   return L.join("\n");
 }
 
+// Backfill (rodar uma vez): popula ingressos_emitidos a partir dos payloads já
+// salvos em vendas. Idempotente — apaga os ingressos da venda e regrava.
+async function backfillIngressos(supabase: any) {
+  let vendasLidas = 0, ingressosGravados = 0, comTickets = 0, fallback = 0;
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data: lote } = await supabase
+      .from("vendas")
+      .select("id,id_transacao,plataforma,quantidade,nome_comprador,email_comprador,telefone_comprador,documento,cidade,tipo_ingresso,status,data_venda,payload")
+      .range(from, from + PAGE - 1);
+    if (!lote || lote.length === 0) break;
+
+    for (const v of lote) {
+      vendasLidas++;
+      const p = v.payload || {};
+      const base = {
+        venda_id: v.id,
+        order_id: v.id_transacao || null,
+        cidade: v.cidade || null,
+        plataforma: v.plataforma || null,
+        status: v.status || "aprovada",
+        data_venda: v.data_venda || new Date().toISOString(),
+      };
+
+      let rows: any[] = [];
+      const tickets = Array.isArray(p?.event_tickets) ? p.event_tickets : [];
+      if (tickets.length > 0) {
+        // Venda paga Kiwify com event_tickets.
+        comTickets++;
+        rows = tickets.map((t: any) => ({
+          ...base, tipo_ingresso: v.tipo_ingresso || null, batch_name: t.batch_name || null,
+          ingresso_id: t.id != null ? String(t.id) : null, external_id: t.external_id || null,
+          nome: t.name || null, email: t.email || null, telefone: t.phone || null, cpf: t.cpf || null,
+        }));
+      } else if (v.plataforma === "kiwify" && p?.id && p?.name) {
+        // Convite Kiwify: payload é o próprio participante.
+        comTickets++;
+        rows = [{
+          ...base, tipo_ingresso: "convite", batch_name: p.batch_name || null,
+          ingresso_id: String(p.id), external_id: p.external_id || null,
+          nome: p.name || null, email: p.email || null, telefone: p.phone || null, cpf: p.cpf || null,
+          checkin_at: p.checkin_at || null,
+        }];
+      } else {
+        // Sem dados por pessoa: gera `quantidade` linhas (1ª comprador, resto sem nome).
+        fallback++;
+        const qtd = Math.max(1, Number(v.quantidade) || 1);
+        rows = Array.from({ length: qtd }, (_, i) => ({
+          ...base, tipo_ingresso: v.tipo_ingresso || null, batch_name: null,
+          ingresso_id: null, external_id: null,
+          nome: i === 0 ? (v.nome_comprador || null) : "(nome não informado)",
+          email: i === 0 ? (v.email_comprador || null) : null,
+          telefone: i === 0 ? (v.telefone_comprador || null) : null,
+          cpf: v.documento || null,
+        }));
+      }
+
+      if (rows.length === 0) continue;
+      // Idempotência por venda: limpa e regrava.
+      await supabase.from("ingressos_emitidos").delete().eq("venda_id", v.id);
+      const comId = rows.filter((r) => r.ingresso_id);
+      const semId = rows.filter((r) => !r.ingresso_id);
+      if (comId.length) await supabase.from("ingressos_emitidos").upsert(comId, { onConflict: "ingresso_id", ignoreDuplicates: false });
+      if (semId.length) await supabase.from("ingressos_emitidos").insert(semId);
+      ingressosGravados += rows.length;
+    }
+    if (lote.length < PAGE) break;
+  }
+  return { success: true, vendas_lidas: vendasLidas, ingressos_gravados: ingressosGravados, com_tickets: comTickets, fallback };
+}
+
 Deno.serve(async (req) => {
-  console.log("sync-kiwify v2 - puxar tudo + relatório");
+  console.log("sync-kiwify v3 - ingressos emitidos");
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   const json = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   try {
     const supabase = svc();
+
+    // Lê o body uma única vez (action opcional).
+    let body: any = {};
+    try { body = await req.json(); } catch { body = {}; }
+    if (body?.action === "backfill_ingressos") {
+      return json(await backfillIngressos(supabase));
+    }
+
     const token = await getToken();
 
     // Cidades ATIVAS (evento de hoje em diante).
@@ -185,15 +285,16 @@ Deno.serve(async (req) => {
     // como "faltando" falso.
     const idsBanco = new Set<string>();
     const emailsBanco = new Set<string>();
+    const idToVenda = new Map<string, string>(); // id_transacao -> venda.id
     const PAGE = 1000;
     for (let from = 0; ; from += PAGE) {
       const { data: lote } = await supabase
         .from("vendas")
-        .select("id_transacao,email_comprador")
+        .select("id,id_transacao,email_comprador")
         .range(from, from + PAGE - 1);
       if (!lote || lote.length === 0) break;
       for (const r of lote) {
-        if (r.id_transacao != null) idsBanco.add(String(r.id_transacao));
+        if (r.id_transacao != null) { idsBanco.add(String(r.id_transacao)); idToVenda.set(String(r.id_transacao), r.id); }
         const e = norm(r.email_comprador);
         if (e) emailsBanco.add(e);
       }
@@ -230,6 +331,15 @@ Deno.serve(async (req) => {
         const tid = ticketId(part);
         const email = norm(part.email);
 
+        // Ingressos emitidos: grava/atualiza 1 linha por participante (pago e
+        // convite), mesmo que a venda paga ainda não exista no banco — reflete
+        // a verdade da Kiwify. Liga à venda pelo id_transacao quando houver.
+        try {
+          const vId = (tid && idToVenda.get(tid)) || null;
+          await supabase.from("ingressos_emitidos")
+            .upsert(ingressoDeParticipante(part, cidade.nome, vId), { onConflict: "ingresso_id", ignoreDuplicates: false });
+        } catch (_) { /* não aborta a sincronização */ }
+
         if (!ehConvite(part)) {
           // Venda paga: já no banco? (id do ingresso ou e-mail como fallback).
           if ((tid && idsBanco.has(tid)) || (email && emailsBanco.has(email))) { rel.ja_no_banco++; continue; }
@@ -244,7 +354,7 @@ Deno.serve(async (req) => {
         if (tid && idsBanco.has(tid)) { rel.ja_no_banco++; continue; }
 
         // Convite faltante → insere.
-        const { error } = await supabase.from("vendas").insert({
+        const { data: novaVenda, error } = await supabase.from("vendas").insert({
           plataforma: "kiwify",
           id_transacao: part.id || null,
           status: "aprovada",
@@ -259,14 +369,21 @@ Deno.serve(async (req) => {
           documento: part.cpf || null,
           data_venda: part.created_at || new Date().toISOString(),
           payload: part,
-        });
+        }).select("id").single();
         if (error) {
           rel.erros.push({ nome: part.name || "", email: part.email || "", erro: error.message });
         } else {
           inseridos++;
-          if (tid) idsBanco.add(tid);
+          if (tid) { idsBanco.add(tid); if (novaVenda?.id) idToVenda.set(tid, novaVenda.id); }
           if (email) emailsBanco.add(email);
           rel.convites_inseridos.push({ nome: part.name || "", email: part.email || "" });
+          // Liga o ingresso recém-criado à venda do convite.
+          if (novaVenda?.id) {
+            try {
+              await supabase.from("ingressos_emitidos")
+                .upsert(ingressoDeParticipante(part, cidade.nome, novaVenda.id), { onConflict: "ingresso_id", ignoreDuplicates: false });
+            } catch (_) { /* segue */ }
+          }
         }
       }
     }

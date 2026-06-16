@@ -5,6 +5,7 @@ import {
   Filter,
   BarChart3,
   ShoppingCart,
+  Ticket,
   TrendingUp,
   Settings,
   LogOut,
@@ -43,6 +44,7 @@ const eventosItems = [
   { title: "Dashboard WS", url: "/", icon: LayoutDashboard },
   { title: "Resumo City", url: "/eventos-geral", icon: LayoutDashboard },
   { title: "Vendas", url: "/vendas-eventos", icon: ShoppingCart },
+  { title: "Ingressos Emitidos", url: "/ingressos-emitidos", icon: Ticket },
 ];
 
 const insideSalesItems = [
