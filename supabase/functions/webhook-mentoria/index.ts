@@ -6,6 +6,20 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+// Converte uma data (inclusive DD/MM/AAAA do BR) em ISO; se inválida, usa agora.
+function parseDataVenda(raw: unknown): string {
+  if (raw == null || String(raw).trim() === "") return new Date().toISOString();
+  const s = String(raw).trim();
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if (m) {
+    const year = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+    const dt = new Date(year, Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0));
+    if (!isNaN(dt.getTime())) return dt.toISOString();
+  }
+  const dt = new Date(s);
+  return isNaN(dt.getTime()) ? new Date().toISOString() : dt.toISOString();
+}
+
 // Lê um caminho aninhado do payload, ex: "Customer.email" ou "data.buyer.name".
 function getPath(obj: unknown, caminho: string): unknown {
   if (!caminho) return undefined;
@@ -178,10 +192,11 @@ Deno.serve(async (req) => {
       ]) as string | null) || null;
     const status =
       (pick(["status"], ["order_status", "EventType", "status"]) as string | null) || null;
-    const data_venda =
-      (pick(["data_venda", "fechamento", "data"], [
+    const data_venda = parseDataVenda(
+      pick(["data_venda", "fechamento", "data"], [
         "approved_date", "created_at", "Purchase.AuthorizedDate",
-      ]) as string | null) || new Date().toISOString();
+      ]),
+    );
 
     // 4) Resolve o gatilho (produto + forma de pagamento).
     const { data: gatilhos } = await supabase
@@ -277,9 +292,12 @@ Deno.serve(async (req) => {
     );
   } catch (e) {
     console.error("webhook-mentoria erro", e);
+    const msg = e instanceof Error
+      ? e.message
+      : (e && typeof e === "object" ? JSON.stringify(e) : String(e));
     // Responde 200 mesmo em erro para o CRM não marcar como falha e reentregar em loop.
     return new Response(
-      JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+      JSON.stringify({ ok: false, error: msg }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
