@@ -124,8 +124,9 @@ const PRODUTOS_MENTORIA = [
   "Conselho",
 ];
 
-// Formas de pagamento cadastradas no CRM (combinações de Espécie/Boleto/Cheque/Cartão).
+// Formas de pagamento cadastradas no CRM (combinações de Espécie/Boleto/Cheque/Cartão/Pix).
 const FORMAS_PAGAMENTO = [
+  // Sem Pix
   "Espécie",
   "Boleto",
   "Cheque",
@@ -141,6 +142,23 @@ const FORMAS_PAGAMENTO = [
   "Espécie + Boleto + Cheque",
   "Boleto + Cheque + Cartão",
   "Espécie + Boleto + Cheque + Cartão",
+  // Com Pix
+  "Pix",
+  "Pix + Espécie",
+  "Pix + Boleto",
+  "Pix + Cheque",
+  "Pix + Cartão",
+  "Pix + Espécie + Boleto",
+  "Pix + Espécie + Cheque",
+  "Pix + Espécie + Cartão",
+  "Pix + Boleto + Cheque",
+  "Pix + Boleto + Cartão",
+  "Pix + Cheque + Cartão",
+  "Pix + Espécie + Boleto + Cheque",
+  "Pix + Espécie + Boleto + Cartão",
+  "Pix + Espécie + Cheque + Cartão",
+  "Pix + Boleto + Cheque + Cartão",
+  "Pix + Espécie + Boleto + Cheque + Cartão",
 ];
 
 const MentoriaVendas = () => {
@@ -198,6 +216,15 @@ const MentoriaVendas = () => {
 
   const camposAtivos = campos.filter((c) => c.ativo);
   const colCount = camposAtivos.length + 3; // checkbox + msg + data + ações
+
+  // Valores reais que já chegaram nas vendas — alimentam os dropdowns dos gatilhos
+  // para garantir match EXATO com o que o CRM envia.
+  const distinct = (vals: (string | null)[]) =>
+    Array.from(new Set(vals.filter((v): v is string => !!v && v.trim() !== ""))).sort((a, b) =>
+      a.localeCompare(b, "pt-BR"),
+    );
+  const produtosRecebidos = useMemo(() => distinct(vendas.map((v) => v.produto)), [vendas]);
+  const formasRecebidas = useMemo(() => distinct(vendas.map((v) => v.forma_pagamento)), [vendas]);
 
   // Filtro de data (client-side, sobre created_at)
   const filtered = useMemo(() => {
@@ -579,6 +606,8 @@ const MentoriaVendas = () => {
         open={trigOpen}
         onOpenChange={setTrigOpen}
         variaveis={camposAtivos.map((c) => c.label)}
+        produtosRecebidos={produtosRecebidos}
+        formasRecebidas={formasRecebidas}
       />
 
       {/* Editar venda */}
@@ -800,11 +829,20 @@ function GatilhosDialog({
   open,
   onOpenChange,
   variaveis,
+  produtosRecebidos,
+  formasRecebidas,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   variaveis: string[];
+  produtosRecebidos: string[];
+  formasRecebidas: string[];
 }) {
+  // Junta a lista fixa do CRM com o que já chegou de verdade nas vendas (match exato).
+  const merge = (fixos: string[], recebidos: string[]) =>
+    Array.from(new Set([...recebidos, ...fixos]));
+  const produtosOpts = merge(PRODUTOS_MENTORIA, produtosRecebidos);
+  const formasOpts = merge(FORMAS_PAGAMENTO, formasRecebidas);
   const qc = useQueryClient();
   const [form, setForm] = useState({
     produto: "",
@@ -913,7 +951,7 @@ function GatilhosDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__any__">Qualquer produto</SelectItem>
-                  {PRODUTOS_MENTORIA.map((p) => (
+                  {produtosOpts.map((p) => (
                     <SelectItem key={p} value={p}>
                       {p}
                     </SelectItem>
@@ -934,7 +972,7 @@ function GatilhosDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__any__">Qualquer forma</SelectItem>
-                  {FORMAS_PAGAMENTO.map((f) => (
+                  {formasOpts.map((f) => (
                     <SelectItem key={f} value={f}>
                       {f}
                     </SelectItem>
