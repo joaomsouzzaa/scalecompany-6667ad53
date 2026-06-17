@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
-import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode, Eye, EyeOff, Check, ChevronsUpDown, History, CheckCircle2, XCircle, LogOut } from "lucide-react";
+import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode, Check, ChevronsUpDown, History, CheckCircle2, XCircle, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { syncMetaTokenToServer } from "@/lib/meta-ads";
 import { useCidades } from "@/hooks/useCidades";
@@ -89,43 +89,29 @@ export default function Notificacoes() {
   const { data: cidades = [] } = useCidades();
 
   // ---- Conexão WhatsApp (UAZAPI) ----
-  const [cfg, setCfg] = useState({ server_url: "", admin_token: "", instance: "" });
+  // URL e admin token são padrão (secrets no backend). O usuário só cria/deleta a instância.
+  const [instanceNome, setInstanceNome] = useState("");
+  const [instanceSalva, setInstanceSalva] = useState<string | null>(null);
   const [cfgStatus, setCfgStatus] = useState<string>("desconectado");
   const [connecting, setConnecting] = useState(false);
+  const [criando, setCriando] = useState(false);
+  const [deletando, setDeletando] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [numeroConectado, setNumeroConectado] = useState<string | null>(null);
-  const [showToken, setShowToken] = useState(false);
-  const [tokenSalvo, setTokenSalvo] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [loadingGrupos, setLoadingGrupos] = useState(false);
   const [testando, setTestando] = useState(false);     // botão do dialog
   const [testandoId, setTestandoId] = useState<string | null>(null); // botão da linha
 
-  useEffect(() => {
-    (supabase as any).from("whatsapp_config").select("server_url,instance,status,numero").maybeSingle().then(({ data }: any) => {
-      if (data) {
-        setCfg({ server_url: data.server_url || "", admin_token: "", instance: data.instance || "" });
-        setCfgStatus(data.status || "desconectado");
-        setNumeroConectado(data.numero || null);
-        setTokenSalvo(!!data.server_url);
-      }
-    });
+  const carregarConfig = useCallback(async () => {
+    const { data } = await (supabase as any).from("whatsapp_config").select("instance,status,numero").maybeSingle();
+    if (data) {
+      setInstanceSalva(data.instance || null);
+      setCfgStatus(data.status || "desconectado");
+      setNumeroConectado(data.numero || null);
+    }
   }, []);
-
-  const salvarConfig = async () => {
-    // Salva a config (uma linha). admin_token só é gravado se preenchido.
-    const { data: existing } = await (supabase as any).from("whatsapp_config").select("id").maybeSingle();
-    const patch: Record<string, unknown> = {
-      server_url: cfg.server_url.replace(/\/$/, ""),
-      instance: cfg.instance,
-    };
-    if (cfg.admin_token) patch.admin_token = cfg.admin_token;
-    const res = existing
-      ? await (supabase as any).from("whatsapp_config").update(patch).eq("id", existing.id)
-      : await (supabase as any).from("whatsapp_config").insert(patch);
-    if (res.error) { toast.error("Erro ao salvar configuração"); return; }
-    toast.success("Configuração salva");
-  };
+  useEffect(() => { carregarConfig(); }, [carregarConfig]);
 
   const chamarUazapi = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
     const { data, error } = await supabase.functions.invoke("uazapi", { body: { action, ...payload } });
@@ -169,18 +155,48 @@ export default function Notificacoes() {
     }, 3000);
   }, [refreshStatus]);
 
+  const criarInstancia = async () => {
+    const nome = instanceNome.trim();
+    if (!nome) { toast.error("Digite um nome para a instância"); return; }
+    setCriando(true);
+    try {
+      await chamarUazapi("criar_instancia", { nome });
+      setInstanceSalva(nome);
+      setInstanceNome("");
+      toast.success(`Instância "${nome}" criada na UAZAPI. Clique em Conectar para gerar o QR.`);
+      await carregarConfig();
+    } catch (e: any) {
+      toast.error(e?.message || "Falha ao criar instância");
+    } finally {
+      setCriando(false);
+    }
+  };
+
+  const deletarInstancia = async () => {
+    if (!confirm(`Deletar a instância "${instanceSalva}" na UAZAPI? Esta ação é irreversível.`)) return;
+    setDeletando(true);
+    try {
+      await chamarUazapi("deletar_instancia");
+      setInstanceSalva(null); setQrCode(null); setNumeroConectado(null); setCfgStatus("desconectado");
+      toast.success("Instância deletada.");
+    } catch (e: any) {
+      toast.error(e?.message || "Falha ao deletar instância");
+    } finally {
+      setDeletando(false);
+    }
+  };
+
   const conectar = async () => {
     setConnecting(true);
     setQrCode(null);
     try {
-      await salvarConfig();
       const data = await chamarUazapi("connect");
       if (data?.qrcode) setQrCode(data.qrcode);
       if (data?.status) setCfgStatus(data.status);
       toast.success("Escaneie o QR Code no WhatsApp");
       pollUntilConnected();
     } catch (e: any) {
-      toast.error(e?.message || "Falha ao conectar. Confira URL e token.");
+      toast.error(e?.message || "Falha ao conectar.");
     } finally {
       setConnecting(false);
     }
@@ -498,44 +514,27 @@ export default function Notificacoes() {
                   </Badge>
                 </CardTitle>
                 <CardDescription>
-                  Informe os dados da sua instância UAZAPI e conecte escaneando o QR Code no WhatsApp.
+                  Crie a instância com um nome e conecte escaneando o QR Code no WhatsApp.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <Label>URL do servidor UAZAPI</Label>
-                    <Input placeholder="https://sua-instancia.uazapi.com"
-                      value={cfg.server_url} onChange={(e) => setCfg({ ...cfg, server_url: e.target.value })} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="flex items-center gap-2">
-                      Token (admin/instância)
-                      {tokenSalvo && <Badge variant="secondary" className="text-[10px]">salvo</Badge>}
-                    </Label>
-                    <div className="relative">
-                      <Input type={showToken ? "text" : "password"}
-                        placeholder={tokenSalvo ? "•••••••• (salvo — deixe em branco p/ manter)" : "cole o token"}
-                        className="pr-9"
-                        value={cfg.admin_token} onChange={(e) => setCfg({ ...cfg, admin_token: e.target.value })} />
-                      <button type="button" onClick={() => setShowToken((s) => !s)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        aria-label={showToken ? "Ocultar token" : "Mostrar token"}>
-                        {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
+                {!instanceSalva ? (
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="space-y-1">
+                      <Label>Nome da instância</Label>
+                      <Input placeholder="ex: scaledash" value={instanceNome} onChange={(e) => setInstanceNome(e.target.value)} className="w-64" />
                     </div>
-                    {tokenSalvo && (
-                      <p className="text-[11px] text-muted-foreground">
-                        Token já salvo (oculto por segurança). Deixe em branco para manter, ou cole um novo para substituir.
-                      </p>
-                    )}
+                    <Button onClick={criarInstancia} disabled={criando}>
+                      <Plus className="mr-2 h-4 w-4" />{criando ? "Criando..." : "Criar instância"}
+                    </Button>
                   </div>
-                  <div className="space-y-1">
-                    <Label>Nome da instância</Label>
-                    <Input placeholder="ex: scaledash"
-                      value={cfg.instance} onChange={(e) => setCfg({ ...cfg, instance: e.target.value })} />
+                ) : (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">Instância:</span>
+                    <Badge variant="outline">{instanceSalva}</Badge>
                   </div>
-                </div>
+                )}
+                {instanceSalva && (
                 <div className="flex flex-wrap gap-2">
                   <Button onClick={conectar} disabled={connecting}>
                     <QrCode className="mr-2 h-4 w-4" /> {connecting ? "Conectando..." : "Conectar / Gerar QR"}
@@ -554,7 +553,11 @@ export default function Notificacoes() {
                       {desconectando ? "Desconectando..." : "Desconectar"}
                     </Button>
                   )}
+                  <Button variant="outline" className="text-destructive" onClick={deletarInstancia} disabled={deletando}>
+                    <Trash2 className="mr-2 h-4 w-4" />{deletando ? "Deletando..." : "Deletar instância"}
+                  </Button>
                 </div>
+                )}
                 {qrCode && (
                   <div className="flex flex-col items-center gap-2 pt-2">
                     <img
