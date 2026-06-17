@@ -120,6 +120,25 @@ class ImapClient {
     if (!m) return [];
     return m[1].trim().split(/\s+/).filter(Boolean).map(Number).filter((n) => !isNaN(n));
   }
+  // Grava uma mensagem (raw RFC822) numa pasta — usado p/ registrar a resposta
+  // na pasta Enviados (SMTP sozinho não faz isso).
+  async append(mailbox: string, raw: string): Promise<void> {
+    const bytes = this.enc.encode(raw);
+    const tag = `A${++this.tagN}`;
+    await this.conn.write(this.enc.encode(`${tag} APPEND ${JSON.stringify(mailbox)} (\\Seen) {${bytes.length}}\r\n`));
+    const cont = await this.readUntilLine();
+    if (!cont.startsWith("+")) throw new Error("APPEND não aceito: " + cont);
+    await this.conn.write(bytes);
+    await this.conn.write(this.enc.encode("\r\n"));
+    while (true) {
+      const l = await this.readUntilLine();
+      if (l.startsWith(`${tag} `)) {
+        if (/^A\d+ (NO|BAD)/.test(l)) throw new Error(l.replace(/^A\d+ (NO|BAD)\s*/, "") || "Erro APPEND");
+        return;
+      }
+    }
+  }
+
   async fetchMessage(uid: number): Promise<{ headers: string; body: string }> {
     const res = await this.command(
       `UID FETCH ${uid} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES)] BODY.PEEK[TEXT])`,
@@ -221,6 +240,42 @@ function matchKeyword(texto: string, keywords: string[]): string | null {
   const t = norm(texto);
   for (const k of keywords) { const kn = norm(k); if (kn && t.includes(kn)) return k; }
   return null;
+}
+
+// Monta a mensagem RFC822 da resposta para gravar na pasta Enviados.
+function buildRawSent(cfg: EmailConfig, msg: any, subject: string, reply: string): string {
+  const from = cfg.from_name ? `${cfg.from_name} <${cfg.username}>` : cfg.username;
+  const dominio = (cfg.username.split("@")[1] || "local").trim();
+  const date = new Date().toUTCString().replace("GMT", "+0000");
+  const html = reply.replace(/\n/g, "<br>");
+  const headers = [
+    `From: ${from}`,
+    `To: ${msg.from_email}`,
+    `Subject: ${subject}`,
+    `Date: ${date}`,
+    `Message-ID: <${crypto.randomUUID()}@${dominio}>`,
+    msg.message_id ? `In-Reply-To: <${msg.message_id}>` : "",
+    msg.message_id ? `References: <${msg.message_id}>` : "",
+    "MIME-Version: 1.0",
+    "Content-Type: text/html; charset=utf-8",
+  ].filter(Boolean).join("\r\n");
+  return headers + "\r\n\r\n" + html.replace(/\r?\n/g, "\r\n");
+}
+
+// Grava a resposta na pasta Enviados, tentando os nomes mais comuns do cPanel/Dovecot.
+async function gravarEnviados(cfg: EmailConfig, raw: string) {
+  const imap = new ImapClient(cfg.imap_host, cfg.imap_port || 993);
+  try {
+    await imap.connect();
+    await imap.login(cfg.username, cfg.password);
+    const pastas = ["INBOX.Sent", "Sent", "INBOX.Sent Items", "Sent Items", "INBOX.Enviados", "Enviados"];
+    for (const p of pastas) {
+      try { await imap.append(p, raw); return; } catch { /* tenta a próxima */ }
+    }
+    throw new Error("nenhuma pasta de Enviados aceitou o APPEND");
+  } finally {
+    imap.close();
+  }
 }
 
 async function enviarWhatsapp(sb: ReturnType<typeof createClient>, destino: string, mensagem: string) {
@@ -353,6 +408,8 @@ Deno.serve(async (req) => {
         inReplyTo: (msg as any).message_id ?? undefined,
       });
       await smtp.close();
+      // Registra a resposta na pasta Enviados do webmail (SMTP não faz isso).
+      try { await gravarEnviados(cfg, buildRawSent(cfg, msg, subject, reply)); } catch (e) { console.error("[email] gravar Enviados falhou:", (e as any)?.message || e); }
       await sb.from("email_mensagens").update({ status: "respondido", replied_at: new Date().toISOString(), draft_reply: reply }).eq("id", id);
       return json({ ok: true });
     }
