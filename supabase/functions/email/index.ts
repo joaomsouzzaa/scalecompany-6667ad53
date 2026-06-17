@@ -189,11 +189,25 @@ async function aiChat(system: string, user: string): Promise<string> {
     return j?.choices?.[0]?.message?.content?.trim() ?? "";
   } catch { return ""; }
 }
-function generateDraft(subject: string, body: string): Promise<string> {
-  return aiChat(
-    "Você é um assistente que escreve rascunhos de resposta de e-mail em português, educados, claros e diretos. Devolva apenas o corpo da resposta, sem assinatura nem assunto. Não invente dados (valores, datas, reembolsos aprovados); onde faltar informação use [colchetes].",
-    `Assunto: ${subject}\n\nMensagem recebida:\n${body}\n\nEscreva um rascunho de resposta.`,
+// Rodapé fixo de toda resposta: link de WhatsApp (mensagem pré-carregada) +
+// assinatura. Anexado em código para garantir presença (não depende da IA).
+const WHATSAPP_ATENDIMENTO = "5511915304949";
+const WHATSAPP_TEXTO = "Oi, recebi o retorno do e-mail e preciso realizar o cancelamento e reembolso da minha compra.";
+const WHATSAPP_LINK = `https://wa.me/${WHATSAPP_ATENDIMENTO}?text=${encodeURIComponent(WHATSAPP_TEXTO)}`;
+const ASSINATURA = "Att. João Souza\nTime de Eventos Raphael Mattos";
+const RODAPE = `\n\nSe preferir, agilize pelo WhatsApp: ${WHATSAPP_LINK}\n\n${ASSINATURA}`;
+
+async function generateDraft(subject: string, body: string): Promise<string> {
+  const corpo = await aiChat(
+    "Você escreve rascunhos de resposta de e-mail para o atendimento de eventos (Raphael Mattos), em português, cordiais, claros e diretos. " +
+    "REGRAS OBRIGATÓRIAS: (1) comece com uma saudação (ex.: 'Olá, tudo bem?'). " +
+    "(2) Para localizar o pedido, solicite APENAS três informações: número do pedido, nome completo e e-mail usado na compra. " +
+    "(3) Não prometa nem confirme cancelamento/reembolso/valores; diga que, com esses dados, seguiremos com a solicitação. " +
+    "(4) NÃO inclua assinatura nem despedida (isso é adicionado depois). Devolva apenas o corpo, sem assunto.",
+    `Assunto: ${subject}\n\nMensagem recebida:\n${body}\n\nEscreva o corpo da resposta seguindo as regras.`,
   );
+  if (!corpo) return "";
+  return corpo.trimEnd() + RODAPE;
 }
 function generateResumo(subject: string, body: string): Promise<string> {
   return aiChat(
