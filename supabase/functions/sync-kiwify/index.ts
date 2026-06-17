@@ -106,12 +106,17 @@ function ingressoDeParticipante(part: any, cidadeNome: string, vendaId: string |
 
 const fmtSP = () => new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
-// Envia o relatório (com chunking) via função uazapi → action "send".
-async function enviarRelatorio(mensagem: string) {
-  const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/uazapi`;
-  const auth = `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`;
+// Envia o relatório (com chunking) DIRETO na UAZAPI (lê whatsapp_config).
+// Evita o hop de chamar a função uazapi via HTTP (que falhava em silêncio).
+// Retorna um diagnóstico para aparecer no JSON do sync.
+async function enviarRelatorio(supabase: any, mensagem: string) {
+  const diag: { enviados: number; erros: string[] } = { enviados: 0, erros: [] };
+  const { data: cfg } = await supabase.from("whatsapp_config").select("server_url,admin_token,status").maybeSingle();
+  if (!cfg?.server_url || !cfg?.admin_token) { diag.erros.push("whatsapp_config incompleto"); return diag; }
+  const base = String(cfg.server_url).replace(/\/$/, "");
+  const token = cfg.admin_token;
+
   const MAX = 3500;
-  // Quebra por linhas respeitando o limite (relatórios grandes viram várias mensagens).
   const chunks: string[] = [];
   let atual = "";
   for (const linha of mensagem.split("\n")) {
@@ -122,15 +127,18 @@ async function enviarRelatorio(mensagem: string) {
 
   for (const chunk of chunks) {
     try {
-      await fetch(url, {
+      const r = await fetch(`${base}/send/text`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: auth },
-        body: JSON.stringify({ action: "send", destinatario: RELATORIO_NUMERO, mensagem: chunk.trimEnd() }),
+        headers: { "Content-Type": "application/json", token, admintoken: token },
+        body: JSON.stringify({ number: RELATORIO_NUMERO, text: chunk.trimEnd() }),
       });
+      if (r.ok) diag.enviados++;
+      else { const t = await r.text(); diag.erros.push(`HTTP ${r.status}: ${t.slice(0, 200)}`); }
     } catch (e) {
-      console.log("Falha ao enviar relatório:", (e as any)?.message || e);
+      diag.erros.push((e as any)?.message || String(e));
     }
   }
+  return diag;
 }
 
 type CidadeRel = {
@@ -276,8 +284,8 @@ Deno.serve(async (req) => {
     const { data: cids } = await supabase.from("cidades").select("nome,slug,data_evento");
     const ativas = (cids || []).filter((c: any) => !c.data_evento || String(c.data_evento).slice(0, 10) >= hoje);
     if (ativas.length === 0) {
-      await enviarRelatorio(montarRelatorio([], 0));
-      return json({ success: true, msg: "Nenhuma cidade ativa", inseridos: 0 });
+      const rel0 = await enviarRelatorio(supabase, montarRelatorio([], 0));
+      return json({ success: true, msg: "Nenhuma cidade ativa", inseridos: 0, relatorio: rel0 });
     }
 
     // Dedup POR INGRESSO: conjunto de id_transacao já existentes no banco.
@@ -412,12 +420,13 @@ Deno.serve(async (req) => {
     }
 
     const rels = [...relPorCidade.values()];
-    await enviarRelatorio(montarRelatorio(rels, ativas.length));
+    const relatorio = await enviarRelatorio(supabase, montarRelatorio(rels, ativas.length));
 
     return json({
       success: true,
       cidades_ativas: ativas.length,
       convites_inseridos: inseridos,
+      relatorio,
       detalhe: rels,
     });
   } catch (err) {
