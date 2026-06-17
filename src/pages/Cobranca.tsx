@@ -10,6 +10,10 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -22,85 +26,143 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   CreditCard, Plus, Pencil, Trash2, Wifi, WifiOff, RefreshCw, QrCode, Eye, EyeOff,
-  LogOut, Upload, Send,
+  LogOut, Upload, Send, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 // ===================================================================
-// Parser de CSV (mesmo padrão de VendasEventos: autodetecta delimitador,
-// respeita aspas). Aqui mantemos TODAS as colunas do CSV (o espelho mostra
-// os dados crus + colunas de cadência ao lado).
+// Parser da planilha "Fluxo de Caixa Semanal" (Google Sheets → CSV).
+// O arquivo tem várias seções no mesmo CSV; nos interessam duas:
+//  1) CONTAS A RECEBER — colunas de data; pegamos a coluna do DIA DE HOJE.
+//  2) VENCIDOS (inadimplentes) — Categoria, Cliente, Data de Vencimento, Valor, Obs.
 // ===================================================================
 function stripAccentsLower(s: string): string {
-  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 }
-
-// Colunas que reconhecemos como telefone / nome (para identidade e {{nome}}).
-const TEL_KEYS = ["telefone", "celular", "whatsapp", "fone", "telefone_comprador", "contato"];
-const NOME_KEYS = ["nome", "cliente", "comprador", "nome_comprador", "razao_social"];
-
-function parseCsvLine(line: string, delim: string): string[] {
-  const out: string[] = [];
+function parseBRNumber(raw: string): number {
+  if (!raw) return 0;
+  let s = String(raw).trim().replace(/[R$\s]/g, "");
+  if (s.includes(",") && s.includes(".")) s = s.replace(/\./g, "").replace(",", ".");
+  else if (s.includes(",")) s = s.replace(",", ".");
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+// Conserta texto com mojibake (UTF-8 lido como Latin-1: "Ã§" → "ç") quando detectado.
+function fixEncoding(text: string): string {
+  if (!/Ã.|Â./.test(text)) return text;
+  try { return decodeURIComponent(escape(text)); } catch { return text; }
+}
+// Tokeniza o CSV inteiro respeitando aspas (inclusive campos com quebra de linha).
+function parseCsvAll(text: string, delim = ","): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
   let cur = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') { cur += '"'; i++; } else inQuotes = false;
-      } else cur += ch;
+  let q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += ch;
     } else {
-      if (ch === '"') inQuotes = true;
-      else if (ch === delim) { out.push(cur); cur = ""; }
+      if (ch === '"') q = true;
+      else if (ch === delim) { row.push(cur); cur = ""; }
+      else if (ch === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
+      else if (ch === "\r") { /* ignora */ }
       else cur += ch;
     }
   }
-  out.push(cur);
-  return out.map((c) => c.trim());
+  row.push(cur); rows.push(row);
+  return rows.map((r) => r.map((c) => c.trim()));
 }
-
-type CsvParsed = { headers: string[]; rows: Record<string, string>[] };
-
-function parseCsv(text: string): CsvParsed {
-  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter((l) => l.trim() !== "");
-  if (lines.length < 2) return { headers: [], rows: [] };
-  const delim = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ";" : ",";
-  const headers = parseCsvLine(lines[0], delim);
-  const rows: Record<string, string>[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cells = parseCsvLine(lines[i], delim);
-    const row: Record<string, string> = {};
-    headers.forEach((h, idx) => { row[h] = cells[idx] ?? ""; });
-    rows.push(row);
-  }
-  return { headers, rows };
+// "6/15/2026" (M/D/AAAA, US) → "2026-06-15"
+function usDateToISO(d: string): string {
+  const m = (d || "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (!m) return "";
+  const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+  return `${y}-${String(Number(m[1])).padStart(2, "0")}-${String(Number(m[2])).padStart(2, "0")}`;
 }
-
-function findKey(headers: string[], candidates: string[]): string | null {
-  for (const h of headers) if (candidates.includes(stripAccentsLower(h))) return h;
-  return null;
-}
-
 const normTelefone = (s: string) => (s || "").replace(/\D/g, "");
 
-type Mensagem = { id: string; ordem: number; nome: string; mensagem: string; ativo: boolean };
+type RawReceber = { categoria_lancamento: string; cliente: string; valor: string; data: string };
+type RawInad = { categoria_lancamento: string; cliente: string; data: string; valor: string; observacao: string };
 
-type EspelhoLinha = {
+function parsePlanilha(text: string): { receber: RawReceber[]; inad: RawInad[]; achouColunaHoje: boolean; hojeBR: string } {
+  const rows = parseCsvAll(fixEncoding(text));
+  const hojeISO = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const hojeBR = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+
+  // ---- 1) CONTAS A RECEBER ----
+  const receber: RawReceber[] = [];
+  let achouColunaHoje = false;
+  const recHdr = rows.findIndex((r) => stripAccentsLower(r[0]) === "categoria de lancamento");
+  if (recHdr >= 0) {
+    const hdr = rows[recHdr];
+    let todayCol = -1;
+    for (let c = 2; c < hdr.length; c++) if (usDateToISO(hdr[c]) === hojeISO) { todayCol = c; break; }
+    achouColunaHoje = todayCol >= 0;
+    if (todayCol >= 0) {
+      const PULAR = new Set(["saldo do dia", "receitas", "despesas", "saldo final do dia", ""]);
+      for (let i = recHdr + 1; i < rows.length; i++) {
+        const r = rows[i];
+        const catN = stripAccentsLower(r[0]);
+        if (catN === "despesas" || catN === "saldo final do dia") break;
+        if (PULAR.has(catN) || catN.startsWith("transferencias")) continue;
+        const cliente = (r[1] || "").trim();
+        if (!cliente) continue;
+        const valor = (r[todayCol] || "").trim();
+        if (!valor || parseBRNumber(valor) <= 0) continue;
+        receber.push({ categoria_lancamento: r[0].trim(), cliente, valor, data: hojeBR });
+      }
+    }
+  }
+
+  // ---- 2) VENCIDOS (inadimplentes) ----
+  const inad: RawInad[] = [];
+  const inadHdr = rows.findIndex((r) =>
+    stripAccentsLower(r[0]) === "categoria" && stripAccentsLower(r[2] || "").includes("data de vencimento"));
+  if (inadHdr >= 0) {
+    for (let i = inadHdr + 1; i < rows.length; i++) {
+      const r = rows[i];
+      const cat = (r[0] || "").trim();
+      const cliente = (r[1] || "").trim();
+      const valor = (r[3] || "").trim();
+      // Linha de total (sem categoria/cliente, mas com valor) encerra a seção.
+      if (!cliente && !cat) { if (valor) break; else continue; }
+      if (!cliente || !valor) continue;
+      inad.push({ categoria_lancamento: cat, cliente, data: (r[2] || "").trim(), valor, observacao: (r[4] || "").trim() });
+    }
+  }
+
+  return { receber, inad, achouColunaHoje, hojeBR };
+}
+
+type Mensagem = { id: string; ordem: number; nome: string; mensagem: string; ativo: boolean; categoria: string };
+
+type EspelhoRow = {
+  cliente: string;
+  categoria_lancamento: string;
+  valor: string;
+  data: string;
+  observacao?: string;
   telefone: string;
-  nome: string;
-  dados: Record<string, unknown>;
-  ultima_ordem_enviada: number;
-  ultima_mensagem: string | null;
-  proxima_ordem: number | null;
-  proxima_mensagem_nome: string | null;
-  proxima_mensagem: string | null;
-  tem_proxima: boolean;
-  _selecionado: boolean;
-  _raw: Record<string, string>;
+  nome_match: string | null;
+  score: number;
+  mensagem: string | null;
+  tem_mensagem: boolean;
+  ultima_mensagem?: string | null;
+  ultima_enviada_em?: string | null;
+  proxima_ordem?: number | null;
+  _tipo: "receber" | "inadimplente";
+  _sel: boolean;
+  _tel: string;
 };
 
-const emptyMsg = { ordem: 1, nome: "", mensagem: "", ativo: true };
+const CATEGORIAS = [
+  { value: "inadimplente", label: "Inadimplente (fluxo 1,2,3...)" },
+  { value: "dia_vencimento", label: "Dia do vencimento (única)" },
+];
+const emptyMsg = { ordem: 1, nome: "", mensagem: "", ativo: true, categoria: "inadimplente" };
 
 export default function Cobranca() {
   // ---- Conexão WhatsApp (UAZAPI — instância exclusiva da Cobrança) ----
@@ -128,10 +190,7 @@ export default function Cobranca() {
 
   const salvarConfig = async () => {
     const { data: existing } = await (supabase as any).from("cobranca_whatsapp_config").select("id").maybeSingle();
-    const patch: Record<string, unknown> = {
-      server_url: cfg.server_url.replace(/\/$/, ""),
-      instance: cfg.instance,
-    };
+    const patch: Record<string, unknown> = { server_url: cfg.server_url.replace(/\/$/, ""), instance: cfg.instance };
     if (cfg.admin_token) patch.admin_token = cfg.admin_token;
     const res = existing
       ? await (supabase as any).from("cobranca_whatsapp_config").update(patch).eq("id", existing.id)
@@ -210,17 +269,16 @@ export default function Cobranca() {
     }
   };
 
-  // Auto-poll do status (a cada 30s)
   useEffect(() => {
     refreshStatus(true);
     const id = setInterval(() => refreshStatus(true), 30000);
     return () => clearInterval(id);
   }, [refreshStatus]);
 
-  // ---- Banco de mensagens (cadência) ----
+  // ---- Banco de mensagens (cadência por categoria) ----
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
   const carregarMensagens = useCallback(async () => {
-    const { data } = await (supabase as any).from("cobranca_mensagens").select("*").order("ordem");
+    const { data } = await (supabase as any).from("cobranca_mensagens").select("*").order("categoria").order("ordem");
     setMensagens((data || []) as Mensagem[]);
   }, []);
   useEffect(() => { carregarMensagens(); }, [carregarMensagens]);
@@ -232,19 +290,19 @@ export default function Cobranca() {
   const msgTextRef = useRef<HTMLTextAreaElement | null>(null);
 
   const abrirNovaMsg = () => {
-    const prox = mensagens.length ? Math.max(...mensagens.map((m) => m.ordem)) + 1 : 1;
     setMsgEditId(null);
-    setMsgForm({ ...emptyMsg, ordem: prox, nome: `${prox}ª mensagem` });
+    setMsgForm({ ...emptyMsg });
     setMsgDialog(true);
   };
   const abrirEdicaoMsg = (m: Mensagem) => {
     setMsgEditId(m.id);
-    setMsgForm({ ordem: m.ordem, nome: m.nome, mensagem: m.mensagem, ativo: m.ativo });
+    setMsgForm({ ordem: m.ordem, nome: m.nome, mensagem: m.mensagem, ativo: m.ativo, categoria: m.categoria || "inadimplente" });
     setMsgDialog(true);
   };
   const salvarMsg = async () => {
     if (!msgForm.nome || !msgForm.mensagem) { toast.error("Preencha nome e mensagem"); return; }
-    const payload = { ordem: msgForm.ordem, nome: msgForm.nome, mensagem: msgForm.mensagem, ativo: msgForm.ativo };
+    const ordem = msgForm.categoria === "dia_vencimento" ? 1 : (msgForm.ordem || 1);
+    const payload = { ordem, nome: msgForm.nome, mensagem: msgForm.mensagem, ativo: msgForm.ativo, categoria: msgForm.categoria };
     const res = msgEditId
       ? await (supabase as any).from("cobranca_mensagens").update(payload).eq("id", msgEditId)
       : await (supabase as any).from("cobranca_mensagens").insert(payload);
@@ -271,97 +329,165 @@ export default function Cobranca() {
     requestAnimationFrame(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = start + token.length; });
   };
 
-  // ---- Importação de CSV + popup espelho ----
+  // ---- Importação da planilha + espelhos ----
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [espelhoOpen, setEspelhoOpen] = useState(false);
-  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [linhas, setLinhas] = useState<EspelhoLinha[]>([]);
   const [carregandoEspelho, setCarregandoEspelho] = useState(false);
+  const [rowsReceber, setRowsReceber] = useState<EspelhoRow[]>([]);
+  const [rowsInad, setRowsInad] = useState<EspelhoRow[]>([]);
+  const [avisoImport, setAvisoImport] = useState<string | null>(null);
 
   const onCsvFile = async (file: File) => {
     const text = await file.text();
-    const { headers, rows } = parseCsv(text);
-    if (!rows.length) { toast.error("CSV vazio ou inválido"); return; }
-    const telKey = findKey(headers, TEL_KEYS);
-    if (!telKey) { toast.error("Não encontrei uma coluna de telefone no CSV (telefone, celular, whatsapp...)"); return; }
-    const nomeKey = findKey(headers, NOME_KEYS);
-
-    setCsvHeaders(headers);
+    const { receber, inad, achouColunaHoje, hojeBR } = parsePlanilha(text);
+    if (!receber.length && !inad.length) { toast.error("Não encontrei seções de Contas a Receber nem de Vencidos na planilha."); return; }
+    setAvisoImport(!achouColunaHoje ? `Não há coluna com a data de hoje (${hojeBR}) na planilha — o espelho "A Receber" ficou vazio.` : null);
     setCarregandoEspelho(true);
     setEspelhoOpen(true);
     try {
-      // Monta os contatos: telefone (chave) + nome + dados (todas as colunas viram {{var}})
-      const contatos = rows.map((r) => {
-        const dados: Record<string, string> = {};
-        headers.forEach((h) => { dados[stripAccentsLower(h).replace(/\s+/g, "_")] = r[h]; });
-        return {
-          telefone: normTelefone(r[telKey]),
-          nome: nomeKey ? r[nomeKey] : "",
-          dados,
-          _raw: r,
-        };
-      }).filter((c) => c.telefone);
-
-      const data = await chamar("espelho", { contatos: contatos.map(({ _raw, ...c }) => c) });
-      const linhasSrv = (data?.linhas || []) as Omit<EspelhoLinha, "_selecionado" | "_raw">[];
-      // Casa de volta com a linha crua do CSV (pela posição → telefones na mesma ordem)
-      const merged: EspelhoLinha[] = linhasSrv.map((l, i) => ({
-        ...l,
-        _selecionado: l.tem_proxima,
-        _raw: contatos[i]?._raw || {},
-      }));
-      setLinhas(merged);
+      const [recRes, inaRes] = await Promise.all([
+        receber.length ? chamar("espelho_cobranca", { tipo: "receber", linhas: receber.map((r) => ({ cliente: r.cliente, categoria: r.categoria_lancamento, valor: r.valor, data: r.data })) }) : Promise.resolve({ linhas: [] }),
+        inad.length ? chamar("espelho_cobranca", { tipo: "inadimplente", linhas: inad.map((r) => ({ cliente: r.cliente, categoria: r.categoria_lancamento, valor: r.valor, data: r.data, observacao: r.observacao })) }) : Promise.resolve({ linhas: [] }),
+      ]);
+      const mkRows = (linhas: any[], tipo: "receber" | "inadimplente"): EspelhoRow[] =>
+        (linhas || []).map((l) => ({
+          cliente: l.cliente, categoria_lancamento: l.categoria_lancamento, valor: l.valor, data: l.data, observacao: l.observacao,
+          telefone: l.telefone || "", nome_match: l.nome_match, score: l.score || 0,
+          mensagem: l.mensagem, tem_mensagem: !!l.tem_mensagem,
+          ultima_mensagem: l.ultima_mensagem, ultima_enviada_em: l.ultima_enviada_em, proxima_ordem: l.proxima_ordem,
+          _tipo: tipo, _tel: l.telefone || "",
+          _sel: !!l.tem_mensagem && normTelefone(l.telefone || "").length >= 10,
+        }));
+      setRowsReceber(mkRows(recRes.linhas, "receber"));
+      setRowsInad(mkRows(inaRes.linhas, "inadimplente"));
     } catch (e: any) {
-      toast.error(e?.message || "Falha ao montar o espelho da importação");
+      toast.error(e?.message || "Falha ao montar os espelhos");
       setEspelhoOpen(false);
     } finally {
       setCarregandoEspelho(false);
     }
   };
 
-  const toggleLinha = (idx: number) =>
-    setLinhas((ls) => ls.map((l, i) => (i === idx ? { ...l, _selecionado: !l._selecionado } : l)));
-  const selecionados = linhas.filter((l) => l._selecionado && l.tem_proxima);
-  const todosMarcados = linhas.filter((l) => l.tem_proxima).every((l) => l._selecionado) && selecionados.length > 0;
-  const toggleTodos = () =>
-    setLinhas((ls) => ls.map((l) => (l.tem_proxima ? { ...l, _selecionado: !todosMarcados } : l)));
+  const selValido = (r: EspelhoRow) => r.tem_mensagem && normTelefone(r._tel).length >= 10;
+  const patchRow = (set: typeof setRowsReceber, idx: number, patch: Partial<EspelhoRow>) =>
+    set((rs) => rs.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
 
-  // ---- Disparo + barra de progresso ----
+  const selecionadosReceber = rowsReceber.filter((r) => r._sel && selValido(r));
+  const selecionadosInad = rowsInad.filter((r) => r._sel && selValido(r));
+  const totalSelecionados = selecionadosReceber.length + selecionadosInad.length;
+
+  // ---- Conferência + disparo ----
+  const [conferOpen, setConferOpen] = useState(false);
+  const [itensConfer, setItensConfer] = useState<EspelhoRow[]>([]);
+  const [iniciando, setIniciando] = useState(false);
+
+  const gerar = () => {
+    if (!totalSelecionados) { toast.error("Selecione ao menos uma linha com telefone válido"); return; }
+    setItensConfer([...selecionadosReceber, ...selecionadosInad]);
+    setEspelhoOpen(false);
+    setConferOpen(true);
+  };
+
   const [disparoId, setDisparoId] = useState<string | null>(null);
   const [progresso, setProgresso] = useState<{ total: number; enviados: number; erros: number; status: string } | null>(null);
 
-  const dispararSelecionados = async () => {
+  const comecar = async () => {
     if (!isConnected) { toast.error("Conecte o WhatsApp antes de disparar"); return; }
-    if (!selecionados.length) { toast.error("Selecione ao menos um contato"); return; }
+    setIniciando(true);
     try {
-      const contatos = selecionados.map((l) => ({ telefone: l.telefone, nome: l.nome, dados: l.dados }));
-      const data = await chamar("preparar_lote", { contatos });
+      const itens = itensConfer.map((r) => ({
+        telefone: normTelefone(r._tel),
+        nome: r.cliente,
+        mensagem: r.mensagem,
+        categoria: r._tipo === "receber" ? "dia_vencimento" : "inadimplente",
+        ordem: r._tipo === "inadimplente" ? (r.proxima_ordem ?? null) : null,
+      }));
+      const data = await chamar("preparar_lote", { itens });
       setDisparoId(data.disparo_id);
       setProgresso({ total: data.total, enviados: 0, erros: 0, status: "enviando" });
-      setEspelhoOpen(false);
-      toast.success(`Lote criado: ${data.total} mensagem(ns). O envio roda no servidor (~1 a cada 20s).`);
+      setConferOpen(false);
+      toast.success(`Lote criado: ${data.total} mensagem(ns). Envio no servidor (~1 a cada 20s).`);
     } catch (e: any) {
-      toast.error(e?.message || "Falha ao preparar o disparo");
+      toast.error(e?.message || "Falha ao iniciar o disparo");
+    } finally {
+      setIniciando(false);
     }
   };
 
-  // Polling do progresso (lê do banco — o envio ocorre no cron do servidor).
   useEffect(() => {
     if (!disparoId) return;
     const tick = async () => {
       const { data } = await (supabase as any).from("cobranca_disparos").select("total,enviados,erros,status").eq("id", disparoId).maybeSingle();
       if (data) {
         setProgresso({ total: data.total, enviados: data.enviados, erros: data.erros, status: data.status });
-        if (data.status === "concluido") {
-          toast.success("Disparo concluído!");
-          setDisparoId(null);
-        }
+        if (data.status === "concluido") { toast.success("Disparo concluído!"); setDisparoId(null); }
       }
     };
     tick();
     const id = setInterval(tick, 4000);
     return () => clearInterval(id);
   }, [disparoId]);
+
+  // ---- render de uma tabela de espelho ----
+  const renderEspelho = (rows: EspelhoRow[], set: typeof setRowsReceber, tipo: "receber" | "inadimplente") => {
+    const validos = rows.filter(selValido);
+    const todos = validos.length > 0 && validos.every((r) => r._sel);
+    const toggleTodos = () => set((rs) => rs.map((r) => (selValido(r) ? { ...r, _sel: !todos } : r)));
+    if (!rows.length) return <p className="py-8 text-center text-sm text-muted-foreground">Nenhuma linha nesta seção.</p>;
+    return (
+      <div className="max-h-[55vh] overflow-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10"><Checkbox checked={todos} onCheckedChange={toggleTodos} /></TableHead>
+              <TableHead>Categoria</TableHead>
+              <TableHead>Cliente</TableHead>
+              <TableHead>{tipo === "inadimplente" ? "Venceu" : "Data"}</TableHead>
+              <TableHead>Valor</TableHead>
+              <TableHead>Telefone</TableHead>
+              {tipo === "inadimplente" && <TableHead>Última enviada</TableHead>}
+              <TableHead>{tipo === "inadimplente" ? "Próxima mensagem" : "Mensagem"}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r, idx) => (
+              <TableRow key={idx} className={!r.tem_mensagem ? "opacity-60" : ""}>
+                <TableCell><Checkbox checked={r._sel} disabled={!selValido(r)} onCheckedChange={() => patchRow(set, idx, { _sel: !r._sel })} /></TableCell>
+                <TableCell className="whitespace-nowrap text-xs">{r.categoria_lancamento}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {r.cliente}
+                  {r.nome_match
+                    ? <span className="block text-[10px] text-muted-foreground">match: {r.nome_match} ({r.score}%)</span>
+                    : <span className="block text-[10px] text-amber-600">sem match — digite o telefone</span>}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-xs">{r.data}</TableCell>
+                <TableCell className="whitespace-nowrap text-xs">{r.valor}</TableCell>
+                <TableCell>
+                  <Input value={r._tel} onChange={(e) => patchRow(set, idx, { _tel: e.target.value, _sel: r._sel && (normTelefone(e.target.value).length >= 10) })}
+                    placeholder="55DDDNUMERO" className="h-8 w-36 text-xs" />
+                </TableCell>
+                {tipo === "inadimplente" && (
+                  <TableCell className="text-xs text-muted-foreground max-w-[180px]">
+                    {r.ultima_mensagem
+                      ? <span title={r.ultima_mensagem}>{r.ultima_enviada_em ? new Date(r.ultima_enviada_em).toLocaleDateString("pt-BR") : ""} · {r.ultima_mensagem.slice(0, 30)}…</span>
+                      : "—"}
+                  </TableCell>
+                )}
+                <TableCell className="text-xs max-w-[280px]">
+                  {r.tem_mensagem
+                    ? <span title={r.mensagem || ""}>
+                        {tipo === "inadimplente" && r.proxima_ordem ? <Badge variant="outline" className="mr-1">#{r.proxima_ordem}</Badge> : null}
+                        {(r.mensagem || "").slice(0, 60)}{(r.mensagem || "").length > 60 ? "…" : ""}
+                      </span>
+                    : <span className="text-amber-600">sem mensagem nessa categoria</span>}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    );
+  };
 
   return (
     <SidebarProvider>
@@ -378,7 +504,7 @@ export default function Cobranca() {
             </div>
           </header>
 
-          <div className="p-6 space-y-6 max-w-5xl">
+          <div className="p-6 space-y-6 max-w-6xl">
             {/* Conexão WhatsApp */}
             <Card>
               <CardHeader>
@@ -389,99 +515,66 @@ export default function Cobranca() {
                     {isConnected ? `Conectado${numeroConectado ? ` · ${numeroConectado}` : ""}` : cfgStatus}
                   </Badge>
                 </CardTitle>
-                <CardDescription>
-                  Instância exclusiva da cobrança (separada das Notificações). Conecte escaneando o QR Code.
-                </CardDescription>
+                <CardDescription>Instância exclusiva da cobrança (separada das Notificações). Conecte escaneando o QR Code.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="space-y-1">
                     <Label>URL do servidor UAZAPI</Label>
-                    <Input placeholder="https://sua-instancia.uazapi.com"
-                      value={cfg.server_url} onChange={(e) => setCfg({ ...cfg, server_url: e.target.value })} />
+                    <Input placeholder="https://sua-instancia.uazapi.com" value={cfg.server_url} onChange={(e) => setCfg({ ...cfg, server_url: e.target.value })} />
                   </div>
                   <div className="space-y-1">
-                    <Label className="flex items-center gap-2">
-                      Token (admin/instância)
-                      {tokenSalvo && <Badge variant="secondary" className="text-[10px]">salvo</Badge>}
-                    </Label>
+                    <Label className="flex items-center gap-2">Token (admin/instância){tokenSalvo && <Badge variant="secondary" className="text-[10px]">salvo</Badge>}</Label>
                     <div className="relative">
-                      <Input type={showToken ? "text" : "password"}
-                        placeholder={tokenSalvo ? "•••••••• (salvo — deixe em branco p/ manter)" : "cole o token"}
-                        className="pr-9"
+                      <Input type={showToken ? "text" : "password"} placeholder={tokenSalvo ? "•••••••• (salvo — deixe em branco p/ manter)" : "cole o token"} className="pr-9"
                         value={cfg.admin_token} onChange={(e) => setCfg({ ...cfg, admin_token: e.target.value })} />
-                      <button type="button" onClick={() => setShowToken((s) => !s)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        aria-label={showToken ? "Ocultar token" : "Mostrar token"}>
+                      <button type="button" onClick={() => setShowToken((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={showToken ? "Ocultar token" : "Mostrar token"}>
                         {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
                   </div>
                   <div className="space-y-1">
                     <Label>Nome da instância</Label>
-                    <Input placeholder="ex: cobranca"
-                      value={cfg.instance} onChange={(e) => setCfg({ ...cfg, instance: e.target.value })} />
+                    <Input placeholder="ex: cobranca" value={cfg.instance} onChange={(e) => setCfg({ ...cfg, instance: e.target.value })} />
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button onClick={conectar} disabled={connecting}>
-                    <QrCode className="mr-2 h-4 w-4" /> {connecting ? "Conectando..." : "Conectar / Gerar QR"}
-                  </Button>
-                  <Button variant="outline" onClick={() => refreshStatus(false)} disabled={loadingStatus}>
-                    <RefreshCw className={`mr-2 h-4 w-4 ${loadingStatus ? "animate-spin" : ""}`} />
-                    {loadingStatus ? "Atualizando..." : "Atualizar status"}
-                  </Button>
-                  {isConnected && (
-                    <Button variant="destructive" onClick={desconectar} disabled={desconectando}>
-                      <LogOut className="mr-2 h-4 w-4" />
-                      {desconectando ? "Desconectando..." : "Desconectar"}
-                    </Button>
-                  )}
+                  <Button onClick={conectar} disabled={connecting}><QrCode className="mr-2 h-4 w-4" /> {connecting ? "Conectando..." : "Conectar / Gerar QR"}</Button>
+                  <Button variant="outline" onClick={() => refreshStatus(false)} disabled={loadingStatus}><RefreshCw className={`mr-2 h-4 w-4 ${loadingStatus ? "animate-spin" : ""}`} />{loadingStatus ? "Atualizando..." : "Atualizar status"}</Button>
+                  {isConnected && <Button variant="destructive" onClick={desconectar} disabled={desconectando}><LogOut className="mr-2 h-4 w-4" />{desconectando ? "Desconectando..." : "Desconectar"}</Button>}
                 </div>
                 {qrCode && (
                   <div className="flex flex-col items-center gap-2 pt-2">
-                    <img
-                      src={qrCode.startsWith("data:") ? qrCode : `data:image/png;base64,${qrCode}`}
-                      alt="QR Code WhatsApp" className="h-56 w-56 rounded-lg border border-border bg-white p-2"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      WhatsApp → Aparelhos conectados → Conectar aparelho → escaneie
-                    </p>
+                    <img src={qrCode.startsWith("data:") ? qrCode : `data:image/png;base64,${qrCode}`} alt="QR Code WhatsApp" className="h-56 w-56 rounded-lg border border-border bg-white p-2" />
+                    <p className="text-xs text-muted-foreground">WhatsApp → Aparelhos conectados → Conectar aparelho → escaneie</p>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Progresso do disparo em andamento */}
+            {/* Progresso do disparo */}
             {progresso && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Send className="h-4 w-4 text-primary" /> Disparo em andamento
-                    <Badge variant="secondary" className="ml-2">{progresso.status}</Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    O envio roda no servidor (~1 mensagem a cada 20s). Pode fechar esta aba — não interrompe.
-                  </CardDescription>
+                  <CardTitle className="text-base flex items-center gap-2"><Send className="h-4 w-4 text-primary" /> Disparo em andamento<Badge variant="secondary" className="ml-2">{progresso.status}</Badge></CardTitle>
+                  <CardDescription>O envio roda no servidor (~1 mensagem a cada 20s). Pode fechar esta aba — não interrompe.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <Progress value={progresso.total ? (progresso.enviados / progresso.total) * 100 : 0} />
-                  <p className="text-sm text-muted-foreground">
-                    {progresso.enviados} de {progresso.total} enviadas
-                    {progresso.erros ? ` · ${progresso.erros} erro(s)` : ""}
-                  </p>
+                  <p className="text-sm text-muted-foreground">{progresso.enviados} de {progresso.total} enviadas{progresso.erros ? ` · ${progresso.erros} erro(s)` : ""}</p>
                 </CardContent>
               </Card>
             )}
 
-            {/* Banco de mensagens / cadência */}
+            {/* Banco de mensagens */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle className="text-base">Cadência de mensagens</CardTitle>
+                  <CardTitle className="text-base">Mensagens / cadência</CardTitle>
                   <CardDescription>
-                    Os textos da cobrança (1ª, 2ª, 3ª...). O sistema escolhe a próxima para cada contato
-                    com base no histórico (memória por telefone). Use variáveis como {"{{nome}}"} e as colunas do CSV.
+                    Categoria <strong>Dia do vencimento</strong> = 1 mensagem única (Contas a Receber do dia).
+                    Categoria <strong>Inadimplente</strong> = fluxo (1, 2, 3...) com memória por telefone.
+                    Variáveis: {"{{nome}}"}, {"{{valor}}"}, {"{{vencimento}}"}, {"{{data}}"}.
                   </CardDescription>
                 </div>
                 <Button size="sm" onClick={abrirNovaMsg}><Plus className="mr-2 h-4 w-4" /> Nova mensagem</Button>
@@ -492,12 +585,11 @@ export default function Cobranca() {
                 ) : (
                   mensagens.map((m) => (
                     <div key={m.id} className="flex items-center gap-3 rounded-md border border-border p-3">
-                      <Badge variant="outline" className="shrink-0">#{m.ordem}</Badge>
+                      <Badge variant={m.categoria === "dia_vencimento" ? "default" : "secondary"} className="shrink-0">
+                        {m.categoria === "dia_vencimento" ? "Vencimento" : `Inad. #${m.ordem}`}
+                      </Badge>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{m.nome}</span>
-                          {!m.ativo && <Badge variant="outline" className="text-muted-foreground">inativa</Badge>}
-                        </div>
+                        <div className="flex items-center gap-2"><span className="font-medium">{m.nome}</span>{!m.ativo && <Badge variant="outline" className="text-muted-foreground">inativa</Badge>}</div>
                         <p className="text-xs text-muted-foreground truncate">{m.mensagem}</p>
                       </div>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => abrirEdicaoMsg(m)}><Pencil className="h-4 w-4" /></Button>
@@ -508,61 +600,56 @@ export default function Cobranca() {
               </CardContent>
             </Card>
 
-            {/* Importar CSV */}
+            {/* Importar planilha */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle className="text-base">Importar cobranças (CSV)</CardTitle>
-                  <CardDescription>
-                    O CSV precisa de uma coluna de telefone. Após importar, você revê tudo no espelho antes de disparar.
-                  </CardDescription>
+                  <CardTitle className="text-base">Importar planilha de Fluxo de Caixa (CSV)</CardTitle>
+                  <CardDescription>Gera 2 espelhos: <strong>A Receber (hoje)</strong> e <strong>Inadimplentes</strong>. O telefone é casado por nome com vendas/mentoria.</CardDescription>
                 </div>
-                <Button size="sm" onClick={() => fileRef.current?.click()}>
-                  <Upload className="mr-2 h-4 w-4" /> Importar CSV
-                </Button>
-                <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) onCsvFile(f); e.target.value = ""; }} />
+                <Button size="sm" onClick={() => fileRef.current?.click()}><Upload className="mr-2 h-4 w-4" /> Importar CSV</Button>
+                <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onCsvFile(f); e.target.value = ""; }} />
               </CardHeader>
             </Card>
           </div>
         </main>
       </div>
 
-      {/* Dialog: mensagem (cadência) */}
+      {/* Dialog: mensagem */}
       <Dialog open={msgDialog} onOpenChange={setMsgDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>{msgEditId ? "Editar mensagem" : "Nova mensagem"}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label>Ordem</Label>
-                <Input type="number" min={1} value={msgForm.ordem}
-                  onChange={(e) => setMsgForm((f) => ({ ...f, ordem: Number(e.target.value) || 1 }))} />
-              </div>
               <div className="col-span-2 space-y-1">
-                <Label>Nome</Label>
-                <Input value={msgForm.nome} onChange={(e) => setMsgForm((f) => ({ ...f, nome: e.target.value }))} />
+                <Label>Categoria</Label>
+                <Select value={msgForm.categoria} onValueChange={(v) => setMsgForm((f) => ({ ...f, categoria: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{CATEGORIAS.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+                </Select>
               </div>
+              {msgForm.categoria === "inadimplente" && (
+                <div className="space-y-1">
+                  <Label>Ordem</Label>
+                  <Input type="number" min={1} value={msgForm.ordem} onChange={(e) => setMsgForm((f) => ({ ...f, ordem: Number(e.target.value) || 1 }))} />
+                </div>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label>Nome (rótulo)</Label>
+              <Input value={msgForm.nome} onChange={(e) => setMsgForm((f) => ({ ...f, nome: e.target.value }))} placeholder="ex: 1º aviso" />
             </div>
             <div className="space-y-1">
               <Label>Mensagem</Label>
-              <Textarea ref={msgTextRef} rows={5} value={msgForm.mensagem}
-                onChange={(e) => setMsgForm((f) => ({ ...f, mensagem: e.target.value }))} />
+              <Textarea ref={msgTextRef} rows={5} value={msgForm.mensagem} onChange={(e) => setMsgForm((f) => ({ ...f, mensagem: e.target.value }))} />
               <div className="flex flex-wrap gap-1 pt-1">
-                {["nome", "valor", "vencimento"].map((v) => (
-                  <Button key={v} type="button" variant="secondary" size="sm" className="h-6 text-[11px]" onClick={() => inserirVar(v)}>
-                    {`{{${v}}}`}
-                  </Button>
+                {["nome", "valor", "vencimento", "data"].map((v) => (
+                  <Button key={v} type="button" variant="secondary" size="sm" className="h-6 text-[11px]" onClick={() => inserirVar(v)}>{`{{${v}}}`}</Button>
                 ))}
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                Qualquer coluna do CSV vira variável (ex.: uma coluna "Valor" → {"{{valor}}"}).
-              </p>
+              {msgForm.categoria === "dia_vencimento" && <p className="text-[11px] text-muted-foreground">Só a 1ª mensagem ativa desta categoria é usada (mensagem única do dia do vencimento).</p>}
             </div>
-            <div className="flex items-center gap-2">
-              <Switch checked={msgForm.ativo} onCheckedChange={(v) => setMsgForm((f) => ({ ...f, ativo: v }))} />
-              <Label>Ativa</Label>
-            </div>
+            <div className="flex items-center gap-2"><Switch checked={msgForm.ativo} onCheckedChange={(v) => setMsgForm((f) => ({ ...f, ativo: v }))} /><Label>Ativa</Label></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMsgDialog(false)}>Cancelar</Button>
@@ -574,67 +661,60 @@ export default function Cobranca() {
       {/* AlertDialog: excluir mensagem */}
       <AlertDialog open={!!msgDeleting} onOpenChange={(o) => !o && setMsgDeleting(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir mensagem?</AlertDialogTitle>
-            <AlertDialogDescription>Esta ação não pode ser desfeita.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={excluirMsg}>Excluir</AlertDialogAction>
-          </AlertDialogFooter>
+          <AlertDialogHeader><AlertDialogTitle>Excluir mensagem?</AlertDialogTitle><AlertDialogDescription>Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={excluirMsg}>Excluir</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Dialog: espelho da importação */}
+      {/* Dialog: espelhos */}
       <Dialog open={espelhoOpen} onOpenChange={setEspelhoOpen}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>Espelho da importação ({linhas.length} contato(s))</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-w-6xl">
+          <DialogHeader><DialogTitle>Espelho da importação</DialogTitle></DialogHeader>
           {carregandoEspelho ? (
-            <p className="py-10 text-center text-muted-foreground">Montando espelho e buscando histórico...</p>
+            <p className="py-10 text-center text-muted-foreground">Casando clientes e montando espelhos...</p>
           ) : (
-            <div className="max-h-[60vh] overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10">
-                      <Checkbox checked={todosMarcados} onCheckedChange={toggleTodos} />
-                    </TableHead>
-                    {csvHeaders.map((h) => <TableHead key={h}>{h}</TableHead>)}
-                    <TableHead>Última enviada</TableHead>
-                    <TableHead>Próxima mensagem</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {linhas.map((l, idx) => (
-                    <TableRow key={idx} className={!l.tem_proxima ? "opacity-50" : ""}>
-                      <TableCell>
-                        <Checkbox checked={l._selecionado} disabled={!l.tem_proxima} onCheckedChange={() => toggleLinha(idx)} />
-                      </TableCell>
-                      {csvHeaders.map((h) => <TableCell key={h} className="whitespace-nowrap">{l._raw[h]}</TableCell>)}
-                      <TableCell className="text-xs text-muted-foreground max-w-[200px]">
-                        {l.ultima_mensagem
-                          ? <span title={l.ultima_mensagem}>#{l.ultima_ordem_enviada} · {l.ultima_mensagem.slice(0, 40)}{l.ultima_mensagem.length > 40 ? "…" : ""}</span>
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-xs max-w-[260px]">
-                        {l.tem_proxima
-                          ? <span title={l.proxima_mensagem || ""}><Badge variant="outline" className="mr-1">#{l.proxima_ordem}</Badge>{(l.proxima_mensagem || "").slice(0, 50)}{(l.proxima_mensagem || "").length > 50 ? "…" : ""}</span>
-                          : <span className="text-muted-foreground">cadência concluída</span>}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <>
+              {avisoImport && <p className="text-xs text-amber-600 flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> {avisoImport}</p>}
+              <Tabs defaultValue="receber">
+                <TabsList>
+                  <TabsTrigger value="receber">A Receber (hoje) · {rowsReceber.length}</TabsTrigger>
+                  <TabsTrigger value="inad">Inadimplentes · {rowsInad.length}</TabsTrigger>
+                </TabsList>
+                <TabsContent value="receber">{renderEspelho(rowsReceber, setRowsReceber, "receber")}</TabsContent>
+                <TabsContent value="inad">{renderEspelho(rowsInad, setRowsInad, "inadimplente")}</TabsContent>
+              </Tabs>
+            </>
           )}
           <DialogFooter className="items-center">
-            <span className="text-sm text-muted-foreground mr-auto">{selecionados.length} selecionado(s) para envio</span>
+            <span className="text-sm text-muted-foreground mr-auto">{totalSelecionados} selecionado(s)</span>
             <Button variant="outline" onClick={() => setEspelhoOpen(false)}>Cancelar</Button>
-            <Button onClick={dispararSelecionados} disabled={!selecionados.length}>
-              <Send className="mr-2 h-4 w-4" /> Disparar selecionados
-            </Button>
+            <Button onClick={gerar} disabled={!totalSelecionados}>Gerar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: conferência final */}
+      <Dialog open={conferOpen} onOpenChange={setConferOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader><DialogTitle>Conferência ({itensConfer.length} envio(s))</DialogTitle></DialogHeader>
+          <div className="max-h-[55vh] overflow-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead>Tipo</TableHead><TableHead>Cliente</TableHead><TableHead>Telefone</TableHead><TableHead>Mensagem</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {itensConfer.map((r, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Badge variant={r._tipo === "receber" ? "default" : "secondary"}>{r._tipo === "receber" ? "Vencimento" : `Inad. #${r.proxima_ordem || ""}`}</Badge></TableCell>
+                    <TableCell className="whitespace-nowrap">{r.cliente}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">{normTelefone(r._tel)}</TableCell>
+                    <TableCell className="text-xs max-w-[360px]"><span title={r.mensagem || ""}>{(r.mensagem || "").slice(0, 80)}{(r.mensagem || "").length > 80 ? "…" : ""}</span></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setConferOpen(false); setEspelhoOpen(true); }}>Voltar</Button>
+            <Button onClick={comecar} disabled={iniciando || !itensConfer.length}><Send className="mr-2 h-4 w-4" /> {iniciando ? "Iniciando..." : "Começar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

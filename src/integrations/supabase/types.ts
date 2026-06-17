@@ -166,6 +166,7 @@ export type Database = {
       }
       cobranca_disparo_itens: {
         Row: {
+          categoria: string
           created_at: string
           disparo_id: string
           enviado_em: string | null
@@ -178,6 +179,7 @@ export type Database = {
           telefone: string
         }
         Insert: {
+          categoria?: string
           created_at?: string
           disparo_id: string
           enviado_em?: string | null
@@ -190,6 +192,7 @@ export type Database = {
           telefone: string
         }
         Update: {
+          categoria?: string
           created_at?: string
           disparo_id?: string
           enviado_em?: string | null
@@ -244,6 +247,7 @@ export type Database = {
       cobranca_mensagens: {
         Row: {
           ativo: boolean
+          categoria: string
           created_at: string
           id: string
           mensagem: string
@@ -252,6 +256,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          categoria?: string
           created_at?: string
           id?: string
           mensagem: string
@@ -260,6 +265,7 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          categoria?: string
           created_at?: string
           id?: string
           mensagem?: string

@@ -80,6 +80,50 @@ function proximaMensagem(mensagens: any[], ultimaOrdem: number): any | null {
   return ativas.find((m) => m.ordem > (ultimaOrdem || 0)) || null;
 }
 
+// ---- Match de cliente por similaridade de nome/razão social ----
+// Remove acentos, pontuação e sufixos societários (LTDA, ME, EIRELI, S.A...) para comparar.
+const SUFIXOS = ["ltda", "me", "epp", "eireli", "sa", "s a", "cia", "e cia", "ltda me", "mei", "ss", "s s"];
+function normNome(s: string): string {
+  let n = (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  n = n.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  const palavras = n.split(" ").filter((w) => w && !SUFIXOS.includes(w));
+  return palavras.join(" ");
+}
+function tokensDe(s: string): Set<string> {
+  return new Set(normNome(s).split(" ").filter((w) => w.length >= 3));
+}
+// Score 0..1: Jaccard de tokens, com bônus quando um nome contém o outro.
+function scoreNome(a: string, b: string): number {
+  const na = normNome(a), nb = normNome(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  const ta = tokensDe(a), tb = tokensDe(b);
+  if (!ta.size || !tb.size) return 0;
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter++;
+  const jac = inter / (ta.size + tb.size - inter);
+  const contains = na.includes(nb) || nb.includes(na) ? 0.3 : 0;
+  return Math.min(1, jac + contains);
+}
+type Cand = { nome: string; telefone: string };
+async function carregarCandidatos(supabase: any): Promise<Cand[]> {
+  const out: Cand[] = [];
+  const { data: vd } = await supabase.from("vendas").select("nome_comprador,telefone_comprador").not("telefone_comprador", "is", null);
+  for (const v of vd || []) if (v.nome_comprador && v.telefone_comprador) out.push({ nome: v.nome_comprador, telefone: normTelefone(v.telefone_comprador) });
+  const { data: mv } = await supabase.from("mentoria_vendas").select("nome,telefone").not("telefone", "is", null);
+  for (const m of mv || []) if (m.nome && m.telefone) out.push({ nome: m.nome, telefone: normTelefone(m.telefone) });
+  return out.filter((c) => c.telefone);
+}
+function melhorMatch(cliente: string, cands: Cand[]): { telefone: string; nome: string; score: number } | null {
+  let best: { telefone: string; nome: string; score: number } | null = null;
+  for (const c of cands) {
+    const s = scoreNome(cliente, c.nome);
+    if (!best || s > best.score) best = { telefone: c.telefone, nome: c.nome, score: s };
+  }
+  // Limiar mínimo de confiança; abaixo disso tratamos como "não encontrado".
+  return best && best.score >= 0.5 ? best : null;
+}
+
 Deno.serve(async (req) => {
   console.log("cobranca v1");
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -130,8 +174,61 @@ Deno.serve(async (req) => {
         return json({ success: true });
       }
 
-      // Espelho do CSV: dado um conjunto de telefones, devolve o histórico de cada
-      // contato + qual será a próxima mensagem da cadência.
+      // Espelho da planilha de Fluxo de Caixa. Recebe as linhas já parseadas no
+      // front (cliente, categoria, valor, data) e:
+      //  - casa o nome do cliente com vendas/mentoria_vendas (telefone por similaridade)
+      //  - 'receber': mensagem única da categoria 'dia_vencimento'
+      //  - 'inadimplente': cadência (última/próxima) por telefone
+      case "espelho_cobranca": {
+        const tipo: string = payload.tipo === "receber" ? "receber" : "inadimplente";
+        const linhasIn: { cliente: string; categoria?: string; valor?: string; data?: string; observacao?: string }[] = payload.linhas || [];
+        const catMsg = tipo === "receber" ? "dia_vencimento" : "inadimplente";
+        const { data: msgs } = await supabase.from("cobranca_mensagens").select("*").eq("ativo", true).eq("categoria", catMsg).order("ordem");
+        const msgUnica = (msgs || [])[0] || null; // 'receber' usa a 1ª (única)
+        const cands = await carregarCandidatos(supabase);
+
+        // Pré-carrega memória de cadência (só inadimplente) dos telefones casados.
+        const matchPorLinha = linhasIn.map((l) => melhorMatch(l.cliente, cands));
+        const tels = matchPorLinha.map((m) => m?.telefone).filter(Boolean) as string[];
+        const { data: contatos } = tels.length
+          ? await supabase.from("cobranca_contatos").select("*").in("telefone", tels)
+          : { data: [] };
+        const memMap = new Map<string, any>((contatos || []).map((c: any) => [c.telefone, c]));
+
+        const linhas = linhasIn.map((l, i) => {
+          const match = matchPorLinha[i];
+          const telefone = match?.telefone || "";
+          const vars: Record<string, string | number> = {
+            nome: l.cliente || "", valor: l.valor || "", data: l.data || "",
+            vencimento: l.data || "", categoria: l.categoria || "", observacao: l.observacao || "",
+          };
+          const base = {
+            cliente: l.cliente, categoria_lancamento: l.categoria || "", valor: l.valor || "", data: l.data || "",
+            observacao: l.observacao || "",
+            telefone, nome_match: match?.nome || null, score: match ? Math.round(match.score * 100) : 0,
+          };
+          if (tipo === "receber") {
+            return { ...base, mensagem: msgUnica ? render(msgUnica.mensagem, vars) : null, tem_mensagem: !!msgUnica };
+          }
+          const mem = telefone ? memMap.get(telefone) : null;
+          const ultimaOrdem = mem?.ultima_ordem_enviada || 0;
+          const prox = proximaMensagem(msgs || [], ultimaOrdem);
+          return {
+            ...base,
+            ultima_ordem_enviada: ultimaOrdem,
+            ultima_mensagem: mem?.ultima_mensagem || null,
+            ultima_enviada_em: mem?.ultima_enviada_em || null,
+            proxima_ordem: prox?.ordem || null,
+            proxima_mensagem_nome: prox?.nome || null,
+            mensagem: prox ? render(prox.mensagem, vars) : null,
+            tem_mensagem: !!prox,
+          };
+        });
+        return json({ linhas, categoria: catMsg, tem_mensagem_categoria: (msgs || []).length > 0 });
+      }
+
+      // Espelho do CSV (legado): dado um conjunto de telefones, devolve o histórico
+      // de cada contato + qual será a próxima mensagem da cadência.
       case "espelho": {
         const contatos: { telefone: string; nome?: string; dados?: Record<string, unknown> }[] = payload.contatos || [];
         const { data: mensagens } = await supabase.from("cobranca_mensagens").select("*").eq("ativo", true).order("ordem");
@@ -162,37 +259,24 @@ Deno.serve(async (req) => {
         return json({ linhas });
       }
 
-      // Cria o lote + itens (status pendente). O envio real ocorre no cron (processar_lote).
+      // Cria o lote + itens (status pendente). Recebe os itens JÁ revisados/renderizados
+      // no front: { telefone, nome, mensagem, categoria, ordem }. O envio é no cron.
       case "preparar_lote": {
-        const contatos: { telefone: string; nome?: string; dados?: Record<string, unknown> }[] = payload.contatos || [];
-        if (!contatos.length) return json({ error: "Nenhum contato selecionado" }, 400);
-        const { data: mensagens } = await supabase.from("cobranca_mensagens").select("*").eq("ativo", true).order("ordem");
-
-        const tels = contatos.map((c) => normTelefone(c.telefone)).filter(Boolean);
-        const { data: existentes } = tels.length
-          ? await supabase.from("cobranca_contatos").select("*").in("telefone", tels)
-          : { data: [] };
-        const mapa = new Map<string, any>((existentes || []).map((e: any) => [e.telefone, e]));
+        const itensIn: { telefone: string; nome?: string; mensagem: string; categoria?: string; ordem?: number | null }[] = payload.itens || payload.contatos || [];
+        if (!itensIn.length) return json({ error: "Nenhum item selecionado" }, 400);
 
         const itens: any[] = [];
-        for (const c of contatos) {
-          const tel = normTelefone(c.telefone);
-          if (!tel) continue;
-          const mem = mapa.get(tel);
-          const prox = proximaMensagem(mensagens || [], mem?.ultima_ordem_enviada || 0);
-          if (!prox) continue; // contato já recebeu toda a cadência
-          const vars = { nome: c.nome || mem?.nome || "", ...(c.dados || {}) } as Record<string, string | number>;
-          // upsert dos dados/nome mais recentes do CSV (não mexe na cadência ainda)
+        for (const it of itensIn) {
+          const tel = normTelefone(it.telefone);
+          if (!tel || !it.mensagem) continue;
+          const categoria = it.categoria === "dia_vencimento" ? "dia_vencimento" : "inadimplente";
+          // Garante que o contato existe (não mexe na cadência aqui).
           await supabase.from("cobranca_contatos").upsert({
-            telefone: tel,
-            nome: c.nome || mem?.nome || null,
-            dados: c.dados || mem?.dados || {},
-            ultima_ordem_enviada: mem?.ultima_ordem_enviada || 0,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: "telefone" });
-          itens.push({ telefone: tel, nome: c.nome || mem?.nome || null, mensagem: render(prox.mensagem, vars), ordem: prox.ordem });
+            telefone: tel, nome: it.nome || null, updated_at: new Date().toISOString(),
+          }, { onConflict: "telefone", ignoreDuplicates: false });
+          itens.push({ telefone: tel, nome: it.nome || null, mensagem: it.mensagem, ordem: it.ordem ?? null, categoria });
         }
-        if (!itens.length) return json({ error: "Nenhum contato com próxima mensagem pendente" }, 400);
+        if (!itens.length) return json({ error: "Nenhum item válido (telefone + mensagem)" }, 400);
 
         const { data: disparo, error: dErr } = await supabase.from("cobranca_disparos")
           .insert({ status: "enviando", total: itens.length }).select("id").single();
@@ -222,13 +306,12 @@ Deno.serve(async (req) => {
 
         try {
           await enviarTexto(cfg, item.telefone, item.mensagem);
-          await supabase.from("cobranca_disparo_itens").update({ status: "enviado", enviado_em: new Date().toISOString() }).eq("id", item.id);
-          await supabase.from("cobranca_contatos").update({
-            ultima_ordem_enviada: item.ordem,
-            ultima_mensagem: item.mensagem,
-            ultima_enviada_em: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }).eq("telefone", item.telefone);
+          const agora = new Date().toISOString();
+          await supabase.from("cobranca_disparo_itens").update({ status: "enviado", enviado_em: agora }).eq("id", item.id);
+          // Só a cadência de inadimplência avança a ordem; 'dia_vencimento' só registra o último envio.
+          const patchContato: Record<string, unknown> = { ultima_mensagem: item.mensagem, ultima_enviada_em: agora, updated_at: agora };
+          if (item.categoria === "inadimplente" && item.ordem != null) patchContato.ultima_ordem_enviada = item.ordem;
+          await supabase.from("cobranca_contatos").update(patchContato).eq("telefone", item.telefone);
           await supabase.from("cobranca_disparos").update({ enviados: (disparo.enviados || 0) + 1, updated_at: new Date().toISOString() }).eq("id", disparo.id);
           return json({ success: true, enviado: item.id });
         } catch (e) {
