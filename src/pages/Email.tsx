@@ -15,6 +15,25 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Mail, RefreshCw, Send, Plug, Sparkles, Loader2 } from "lucide-react";
 
+// Chama a edge function `email` e extrai a mensagem de erro REAL do corpo da
+// resposta (supabase.functions.invoke só expõe "non-2xx status code" no error).
+async function invokeEmail(body: Record<string, unknown>): Promise<any> {
+  const { data, error } = await supabase.functions.invoke("email", { body });
+  if (error) {
+    let msg = error.message;
+    try {
+      const ctx = (error as any).context;
+      if (ctx && typeof ctx.text === "function") {
+        const txt = await ctx.text();
+        try { msg = JSON.parse(txt)?.error || txt || msg; } catch { msg = txt || msg; }
+      }
+    } catch { /* mantém msg */ }
+    throw new Error(msg);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
 type EmailMsg = {
   id: string;
   from_email: string | null;
@@ -107,20 +126,28 @@ export default function Email() {
 
   const testarConexao = async () => {
     setTestando(true);
-    await salvarConfig();
-    const { data, error } = await supabase.functions.invoke("email", { body: { action: "test_connection" } });
-    setTestando(false);
-    if (error || data?.error) { toast.error("Falha na conexão: " + (error?.message || data?.error)); return; }
-    toast.success(data?.message || "Conexão OK");
+    try {
+      await salvarConfig();
+      const data = await invokeEmail({ action: "test_connection" });
+      toast.success(data?.message || "Conexão OK");
+    } catch (e: any) {
+      toast.error("Falha na conexão: " + (e?.message || e));
+    } finally {
+      setTestando(false);
+    }
   };
 
   const sincronizar = async () => {
     setSincronizando(true);
-    const { data, error } = await supabase.functions.invoke("email", { body: { action: "fetch_emails" } });
-    setSincronizando(false);
-    if (error || data?.error) { toast.error("Erro: " + (error?.message || data?.error)); return; }
-    toast.success(`${data?.inserted ?? 0} novo(s) e-mail(s) capturado(s)`);
-    queryClient.invalidateQueries({ queryKey: ["email-mensagens"] });
+    try {
+      const data = await invokeEmail({ action: "fetch_emails" });
+      toast.success(`${data?.inserted ?? 0} novo(s) e-mail(s) capturado(s)`);
+      queryClient.invalidateQueries({ queryKey: ["email-mensagens"] });
+    } catch (e: any) {
+      toast.error("Erro: " + (e?.message || e));
+    } finally {
+      setSincronizando(false);
+    }
   };
 
   const abrir = (e: EmailMsg) => { setAberto(e); setRespostaEdit(e.draft_reply || ""); };
@@ -128,23 +155,31 @@ export default function Email() {
   const regenerar = async () => {
     if (!aberto) return;
     setRegenerando(true);
-    const { data, error } = await supabase.functions.invoke("email", { body: { action: "regenerate_draft", id: aberto.id } });
-    setRegenerando(false);
-    if (error || data?.error) { toast.error("Erro: " + (error?.message || data?.error)); return; }
-    setRespostaEdit(data.draft || "");
-    toast.success("Rascunho regenerado");
-    queryClient.invalidateQueries({ queryKey: ["email-mensagens"] });
+    try {
+      const data = await invokeEmail({ action: "regenerate_draft", id: aberto.id });
+      setRespostaEdit(data.draft || "");
+      toast.success("Rascunho regenerado");
+      queryClient.invalidateQueries({ queryKey: ["email-mensagens"] });
+    } catch (e: any) {
+      toast.error("Erro: " + (e?.message || e));
+    } finally {
+      setRegenerando(false);
+    }
   };
 
   const responder = async () => {
     if (!aberto) return;
     setEnviando(true);
-    const { data, error } = await supabase.functions.invoke("email", { body: { action: "send_reply", id: aberto.id, reply: respostaEdit } });
-    setEnviando(false);
-    if (error || data?.error) { toast.error("Erro ao enviar: " + (error?.message || data?.error)); return; }
-    toast.success("Resposta enviada");
-    setAberto(null);
-    queryClient.invalidateQueries({ queryKey: ["email-mensagens"] });
+    try {
+      await invokeEmail({ action: "send_reply", id: aberto.id, reply: respostaEdit });
+      toast.success("Resposta enviada");
+      setAberto(null);
+      queryClient.invalidateQueries({ queryKey: ["email-mensagens"] });
+    } catch (e: any) {
+      toast.error("Erro ao enviar: " + (e?.message || e));
+    } finally {
+      setEnviando(false);
+    }
   };
 
   const ignorar = async (e: EmailMsg) => {
