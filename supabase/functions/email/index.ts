@@ -210,7 +210,7 @@ async function aiChat(system: string, user: string): Promise<string> {
 }
 // Rodapé fixo de toda resposta: link de WhatsApp (mensagem pré-carregada) +
 // assinatura. Anexado em código para garantir presença (não depende da IA).
-const WHATSAPP_ATENDIMENTO = "5511915304949";
+const WHATSAPP_ATENDIMENTO = "5511939412899";
 const WHATSAPP_TEXTO = "Oi, recebi o retorno do e-mail e preciso realizar o cancelamento e reembolso da minha compra.";
 const WHATSAPP_LINK = `https://wa.me/${WHATSAPP_ATENDIMENTO}?text=${encodeURIComponent(WHATSAPP_TEXTO)}`;
 const ASSINATURA = "Att. João Souza\nTime de Eventos Raphael Mattos";
