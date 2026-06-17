@@ -233,14 +233,19 @@ Deno.serve(async (req) => {
   try {
     if (action === "test_connection") {
       const cfg = await getConfig(sb);
+      // Testa só o IMAP (login + seleção da caixa). O denomailer conecta o SMTP
+      // de forma preguiçosa (só no 1º envio), então chamar smtp.close() aqui sem
+      // ter enviado acessa uma conexão undefined → "reading 'close'". O SMTP é
+      // validado de verdade ao responder o primeiro e-mail.
       const imap = new ImapClient(cfg.imap_host, cfg.imap_port || 993);
-      await imap.connect();
-      await imap.login(cfg.username, cfg.password);
-      await imap.selectInbox();
-      imap.close();
-      const smtp = await openSmtp(cfg);
-      await smtp.close();
-      return json({ ok: true, message: "IMAP e SMTP conectaram com sucesso" });
+      try {
+        await imap.connect();
+        await imap.login(cfg.username, cfg.password);
+        await imap.selectInbox();
+      } finally {
+        imap.close();
+      }
+      return json({ ok: true, message: "Conexão IMAP OK (login bem-sucedido)" });
     }
 
     if (action === "fetch_emails") {
