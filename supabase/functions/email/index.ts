@@ -22,21 +22,32 @@ function json(body: unknown, status = 200) {
 }
 
 type EmailConfig = {
+  id: number;
+  nome: string | null;
   imap_host: string; imap_port: number;
   smtp_host: string; smtp_port: number;
   username: string; password: string;
   from_name: string | null;
   whatsapp_destino: string | null;
   keywords: string[] | null;
+  ativo?: boolean;
 };
 
-async function getConfig(sb: ReturnType<typeof createClient>): Promise<EmailConfig> {
-  const { data, error } = await sb.from("email_config").select("*").eq("id", 1).maybeSingle();
+// Carrega uma conta específica (por id). Usado por test_connection/send_reply.
+async function getConfigById(sb: ReturnType<typeof createClient>, id: number): Promise<EmailConfig> {
+  const { data, error } = await sb.from("email_config").select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   if (!data || !data.username || !data.password) {
-    throw new Error("email_config não configurado (preencha host/porta/usuário/senha)");
+    throw new Error("conta de e-mail não configurada (preencha host/porta/usuário/senha)");
   }
   return data as EmailConfig;
+}
+
+// Lista todas as contas ativas e configuradas. Usado pelo cron/fetch geral.
+async function listActiveConfigs(sb: ReturnType<typeof createClient>): Promise<EmailConfig[]> {
+  const { data, error } = await sb.from("email_config").select("*").eq("ativo", true);
+  if (error) throw error;
+  return ((data || []) as EmailConfig[]).filter((c) => c.username && c.password);
 }
 
 // ===================================================================
@@ -291,6 +302,71 @@ async function enviarWhatsapp(sb: ReturnType<typeof createClient>, destino: stri
   if (!res.ok) throw new Error(`UAZAPI ${res.status}`);
 }
 
+// Varre uma conta: últimas 72h, dedup, filtro por keywords, resumo+rascunho,
+// insere os novos e dispara o relatório no WhatsApp dessa conta.
+async function processFetch(sb: ReturnType<typeof createClient>, cfg: EmailConfig) {
+  const keywords = (cfg.keywords && cfg.keywords.length ? cfg.keywords : []) as string[];
+  const desde = new Date(Date.now() - 72 * 60 * 60 * 1000);
+
+  const imap = new ImapClient(cfg.imap_host, cfg.imap_port || 993);
+  await imap.connect();
+  await imap.login(cfg.username, cfg.password);
+  await imap.selectInbox();
+  const uids = await imap.searchSince(desde);
+
+  let inserted = 0, skipped = 0, filtered = 0;
+  const novos: any[] = [];
+  for (const uid of uids) {
+    let headers = "", rawBody = "";
+    try { ({ headers, body: rawBody } = await imap.fetchMessage(uid)); } catch { continue; }
+    const h = parseHeaders(headers);
+    const messageId = (h["message-id"] || "").replace(/[<>]/g, "").trim() || `uid-${cfg.id}-${uid}`;
+    const { data: exists } = await sb.from("email_mensagens").select("id").eq("message_id", messageId).maybeSingle();
+    if (exists) { skipped++; continue; }
+
+    const recebido = h["date"] ? new Date(h["date"]) : null;
+    if (recebido && recebido.getTime() < desde.getTime()) { skipped++; continue; }
+
+    const subject = h["subject"] || "(sem assunto)";
+    const body = cleanBody(rawBody);
+    const categoria = keywords.length ? matchKeyword(`${subject}\n${body}`, keywords) : "(sem filtro)";
+    if (!categoria) { filtered++; continue; }
+
+    const { email, nome } = parseFrom(h["from"] || "");
+    const resumo = await generateResumo(subject, body);
+    const draft = await generateDraft(subject, body);
+    const { data: row } = await sb.from("email_mensagens").insert({
+      message_id: messageId,
+      email_config_id: cfg.id,
+      from_email: email || null,
+      from_name: nome || null,
+      to_email: cfg.username,
+      subject,
+      body,
+      received_at: recebido ? recebido.toISOString() : new Date().toISOString(),
+      resumo,
+      categoria: categoria === "(sem filtro)" ? null : categoria,
+      draft_reply: draft,
+      status: "novo",
+    }).select("*").maybeSingle();
+    if (row) novos.push(row);
+    inserted++;
+  }
+  imap.close();
+
+  if (novos.length > 0 && cfg.whatsapp_destino) {
+    const conta = cfg.nome || cfg.username;
+    const linhas = novos.map((e, i) =>
+      `*${i + 1}. ${e.from_name || e.from_email}*${e.categoria ? ` _(${e.categoria})_` : ""}\n📨 ${e.subject}\n📝 ${e.resumo || "(sem resumo)"}`,
+    );
+    const texto = `📧 *Relatório de E-mails — ${conta} (últimas 72h)*\n${novos.length} novo(s) e-mail(s) relevante(s):\n\n${linhas.join("\n\n")}\n\n_Revise e responda em Eventos → E-mail._`;
+    try { await enviarWhatsapp(sb, cfg.whatsapp_destino, texto); } catch (e) { console.error("[email] WhatsApp falhou:", (e as any)?.message || e); }
+  }
+
+  await sb.from("email_config").update({ ultima_execucao: new Date().toISOString() }).eq("id", cfg.id);
+  return { inserted, skipped, filtered };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -301,7 +377,8 @@ Deno.serve(async (req) => {
 
   try {
     if (action === "test_connection") {
-      const cfg = await getConfig(sb);
+      if (!payload.id) return json({ error: "id da conta obrigatório" }, 400);
+      const cfg = await getConfigById(sb, Number(payload.id));
       // Testa só o IMAP (login + seleção da caixa). O denomailer conecta o SMTP
       // de forma preguiçosa (só no 1º envio), então chamar smtp.close() aqui sem
       // ter enviado acessa uma conexão undefined → "reading 'close'". O SMTP é
@@ -318,65 +395,24 @@ Deno.serve(async (req) => {
     }
 
     if (action === "fetch_emails") {
-      const cfg = await getConfig(sb);
-      const keywords = (cfg.keywords && cfg.keywords.length ? cfg.keywords : []) as string[];
-      const desde = new Date(Date.now() - 72 * 60 * 60 * 1000);
-
-      const imap = new ImapClient(cfg.imap_host, cfg.imap_port || 993);
-      await imap.connect();
-      await imap.login(cfg.username, cfg.password);
-      await imap.selectInbox();
-      const uids = await imap.searchSince(desde);
-
+      // Com id: varre só aquela conta. Sem id (cron): todas as contas ativas.
+      if (payload.id) {
+        const cfg = await getConfigById(sb, Number(payload.id));
+        const r = await processFetch(sb, cfg);
+        return json({ ok: true, contas: 1, ...r });
+      }
+      const cfgs = await listActiveConfigs(sb);
       let inserted = 0, skipped = 0, filtered = 0;
-      const novos: any[] = [];
-      for (const uid of uids) {
-        let headers = "", rawBody = "";
-        try { ({ headers, body: rawBody } = await imap.fetchMessage(uid)); } catch { continue; }
-        const h = parseHeaders(headers);
-        const messageId = (h["message-id"] || "").replace(/[<>]/g, "").trim() || `uid-${uid}`;
-        const { data: exists } = await sb.from("email_mensagens").select("id").eq("message_id", messageId).maybeSingle();
-        if (exists) { skipped++; continue; }
-
-        const recebido = h["date"] ? new Date(h["date"]) : null;
-        if (recebido && recebido.getTime() < desde.getTime()) { skipped++; continue; }
-
-        const subject = h["subject"] || "(sem assunto)";
-        const body = cleanBody(rawBody);
-        const categoria = keywords.length ? matchKeyword(`${subject}\n${body}`, keywords) : "(sem filtro)";
-        if (!categoria) { filtered++; continue; }
-
-        const { email, nome } = parseFrom(h["from"] || "");
-        const resumo = await generateResumo(subject, body);
-        const draft = await generateDraft(subject, body);
-        const { data: row } = await sb.from("email_mensagens").insert({
-          message_id: messageId,
-          from_email: email || null,
-          from_name: nome || null,
-          to_email: cfg.username,
-          subject,
-          body,
-          received_at: recebido ? recebido.toISOString() : new Date().toISOString(),
-          resumo,
-          categoria: categoria === "(sem filtro)" ? null : categoria,
-          draft_reply: draft,
-          status: "novo",
-        }).select("*").maybeSingle();
-        if (row) novos.push(row);
-        inserted++;
+      const erros: string[] = [];
+      for (const cfg of cfgs) {
+        try {
+          const r = await processFetch(sb, cfg);
+          inserted += r.inserted; skipped += r.skipped; filtered += r.filtered;
+        } catch (e) {
+          erros.push(`${cfg.nome || cfg.username}: ${(e as any)?.message || e}`);
+        }
       }
-      imap.close();
-
-      if (novos.length > 0 && cfg.whatsapp_destino) {
-        const linhas = novos.map((e, i) =>
-          `*${i + 1}. ${e.from_name || e.from_email}*${e.categoria ? ` _(${e.categoria})_` : ""}\n📨 ${e.subject}\n📝 ${e.resumo || "(sem resumo)"}`,
-        );
-        const texto = `📧 *Relatório de E-mails (últimas 72h)*\n${novos.length} novo(s) e-mail(s) relevante(s):\n\n${linhas.join("\n\n")}\n\n_Revise e responda em Eventos → E-mail._`;
-        try { await enviarWhatsapp(sb, cfg.whatsapp_destino, texto); } catch (e) { console.error("[email] WhatsApp falhou:", (e as any)?.message || e); }
-      }
-
-      await sb.from("email_config").update({ ultima_execucao: new Date().toISOString() }).eq("id", 1);
-      return json({ ok: true, inserted, skipped, filtered });
+      return json({ ok: true, contas: cfgs.length, inserted, skipped, filtered, erros });
     }
 
     if (action === "regenerate_draft") {
@@ -396,7 +432,7 @@ Deno.serve(async (req) => {
       if (!id || !reply) return json({ error: "id e reply são obrigatórios" }, 400);
       const { data: msg, error } = await sb.from("email_mensagens").select("*").eq("id", id).maybeSingle();
       if (error || !msg) return json({ error: "mensagem não encontrada" }, 404);
-      const cfg = await getConfig(sb);
+      const cfg = await getConfigById(sb, Number((msg as any).email_config_id) || 1);
       const smtp = await openSmtp(cfg);
       const subject = (msg as any).subject?.startsWith("Re:") ? (msg as any).subject : `Re: ${(msg as any).subject ?? ""}`;
       await smtp.send({
