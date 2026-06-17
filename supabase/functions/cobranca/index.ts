@@ -56,12 +56,30 @@ function normTelefone(s: string): string {
   return (s || "").replace(/\D/g, "");
 }
 
-async function enviarTexto(cfg: any, destinatario: string, mensagem: string) {
-  const { base, admin } = adminCreds(cfg);
-  // Envio usa o token DA INSTÂNCIA (cai pro admin se ainda não houver).
-  const token = cfg?.instance_token || admin;
-  if (!base || !token) throw new Error("Configuração UAZAPI (Cobrança) incompleta — crie a instância");
+async function enviarTexto(base: string, token: string, destinatario: string, mensagem: string) {
+  if (!base || !token) throw new Error("Instância UAZAPI indisponível — crie/conecte uma instância");
   return uazFetch(base, UAZAPI.sendText(base), token, { number: destinatario, text: mensagem });
+}
+
+// Busca uma instância do pool compartilhado pelo nome.
+async function getInstancia(supabase: any, nome: string) {
+  const { data } = await supabase.from("uazapi_instancias").select("*").eq("nome", nome).maybeSingle();
+  return data;
+}
+// Resolve { base, token } para enviar: instância `nome`; senão a 1ª do pool; senão admin.
+async function tokenDe(supabase: any, cfg: any, nome?: string | null): Promise<{ base: string; token: string }> {
+  const { base, admin } = adminCreds(cfg);
+  let token = "";
+  if (nome) {
+    const inst = await getInstancia(supabase, nome);
+    token = inst?.instance_token || "";
+  }
+  if (!token) {
+    const { data } = await supabase.from("uazapi_instancias").select("instance_token")
+      .not("instance_token", "is", null).order("created_at", { ascending: true }).limit(1).maybeSingle();
+    token = data?.instance_token || admin;
+  }
+  return { base, token };
 }
 
 // Próxima mensagem da cadência para um contato, dado o estado atual.
@@ -126,7 +144,11 @@ Deno.serve(async (req) => {
     const cfg = await getConfig(supabase);
 
     switch (action) {
-      // Cria a instância na UAZAPI com o nome informado e guarda o token dela.
+      // Pool compartilhado de instâncias (mesma tabela usada pela função `uazapi`).
+      case "listar_instancias": {
+        const { data } = await supabase.from("uazapi_instancias").select("nome,status,numero").order("nome");
+        return json({ instancias: data || [] });
+      }
       case "criar_instancia": {
         const { base, admin } = adminCreds(cfg);
         const nome = (payload.nome || "").trim();
@@ -136,60 +158,56 @@ Deno.serve(async (req) => {
         const inst = data.instance || data || {};
         const token = inst.token || inst.apikey || data.token || data.apikey || null;
         if (!token) throw new Error("UAZAPI não retornou o token da instância ao criar");
-        const patch = { instance: nome, instance_token: token, status: "desconectado", numero: null, updated_at: new Date().toISOString() };
-        if (cfg?.id != null) await supabase.from("cobranca_whatsapp_config").update(patch).eq("id", cfg.id);
-        else await supabase.from("cobranca_whatsapp_config").insert(patch);
+        await supabase.from("uazapi_instancias").upsert(
+          { nome, instance_token: token, status: "desconectado", numero: null, updated_at: new Date().toISOString() },
+          { onConflict: "nome" });
         return json({ success: true, instance: nome });
       }
-      // Remove a instância na UAZAPI e limpa a config.
       case "deletar_instancia": {
-        const { base, admin } = adminCreds(cfg);
-        const token = cfg?.instance_token || admin;
-        if (base && token) {
-          try { await uazFetch(base, UAZAPI.remove(base), token, undefined, "DELETE"); } catch (_) { /* limpa local mesmo se a API recusar */ }
+        const { base } = adminCreds(cfg);
+        const inst = await getInstancia(supabase, payload.nome);
+        if (inst?.instance_token && base) {
+          try { await uazFetch(base, UAZAPI.remove(base), inst.instance_token, undefined, "DELETE"); } catch (_) { /* tira do pool mesmo se a API recusar */ }
         }
-        if (cfg?.id != null) {
-          await supabase.from("cobranca_whatsapp_config")
-            .update({ instance: null, instance_token: null, status: "desconectado", numero: null, updated_at: new Date().toISOString() })
-            .eq("id", cfg.id);
-        }
+        await supabase.from("uazapi_instancias").delete().eq("nome", payload.nome);
         return json({ success: true });
       }
       case "connect": {
-        const { base, admin } = adminCreds(cfg);
-        const instToken = cfg?.instance_token || admin;
-        if (!base || !instToken) return json({ error: "Crie a instância primeiro" }, 400);
-        const data = await uazFetch(base, UAZAPI.connect(base), instToken, {});
-        const inst = data.instance || {};
-        const qrcode = inst.qrcode || data.qrcode || inst.paircode || null;
-        const status = inst.status || (data.connected ? "connected" : "aguardando_qr");
-        if (cfg?.id != null) await supabase.from("cobranca_whatsapp_config").update({ status, updated_at: new Date().toISOString() }).eq("id", cfg.id);
+        const { base } = adminCreds(cfg);
+        const inst = await getInstancia(supabase, payload.instancia);
+        if (!base || !inst?.instance_token) return json({ error: "Instância não encontrada — crie primeiro" }, 400);
+        const data = await uazFetch(base, UAZAPI.connect(base), inst.instance_token, {});
+        const i = data.instance || {};
+        const qrcode = i.qrcode || data.qrcode || i.paircode || null;
+        const status = i.status || (data.connected ? "connected" : "aguardando_qr");
+        await supabase.from("uazapi_instancias").update({ status, updated_at: new Date().toISOString() }).eq("nome", payload.instancia);
         return json({ qrcode, status });
       }
       case "status": {
-        const { base, admin } = adminCreds(cfg);
-        const statusToken = cfg?.instance_token || admin;
-        if (!base || !statusToken) return json({ status: "desconectado" });
-        const data = await uazFetch(base, UAZAPI.status(base), statusToken);
-        const inst = data.instance || {};
-        const connected = inst.status === "connected" || data.connected === true;
-        const status = connected ? "connected" : (inst.status || "desconectado");
-        const numero = inst.owner || inst.profileName || null;
-        const qrcode = inst.qrcode || null;
-        if (cfg?.id != null) await supabase.from("cobranca_whatsapp_config").update({ status, numero, updated_at: new Date().toISOString() }).eq("id", cfg.id);
+        const { base } = adminCreds(cfg);
+        const inst = await getInstancia(supabase, payload.instancia);
+        if (!base || !inst?.instance_token) return json({ status: "desconectado" });
+        const data = await uazFetch(base, UAZAPI.status(base), inst.instance_token);
+        const i = data.instance || {};
+        const connected = i.status === "connected" || data.connected === true;
+        const status = connected ? "connected" : (i.status || "desconectado");
+        const numero = i.owner || i.profileName || null;
+        const qrcode = i.qrcode || null;
+        await supabase.from("uazapi_instancias").update({ status, numero, updated_at: new Date().toISOString() }).eq("nome", payload.instancia);
         return json({ status, numero, connected, qrcode });
       }
       case "disconnect": {
-        const { base, admin } = adminCreds(cfg);
-        const discToken = cfg?.instance_token || admin;
-        if (base && discToken) {
-          try { await uazFetch(base, UAZAPI.disconnect(base), discToken, {}); } catch (_) { /* marca desconectado mesmo se a API recusar */ }
+        const { base } = adminCreds(cfg);
+        const inst = await getInstancia(supabase, payload.instancia);
+        if (base && inst?.instance_token) {
+          try { await uazFetch(base, UAZAPI.disconnect(base), inst.instance_token, {}); } catch (_) { /* marca desconectado mesmo se a API recusar */ }
         }
-        if (cfg?.id != null) await supabase.from("cobranca_whatsapp_config").update({ status: "desconectado", numero: null, updated_at: new Date().toISOString() }).eq("id", cfg.id);
+        await supabase.from("uazapi_instancias").update({ status: "desconectado", numero: null, updated_at: new Date().toISOString() }).eq("nome", payload.instancia);
         return json({ success: true, status: "desconectado" });
       }
       case "send": {
-        await enviarTexto(cfg, payload.destinatario, payload.mensagem);
+        const { base, token } = await tokenDe(supabase, cfg, payload.instancia);
+        await enviarTexto(base, token, payload.destinatario, payload.mensagem);
         return json({ success: true });
       }
 
@@ -297,8 +315,9 @@ Deno.serve(async (req) => {
         }
         if (!itens.length) return json({ error: "Nenhum item válido (telefone + mensagem)" }, 400);
 
+        const instancia = (payload.instancia || "").trim() || null;
         const { data: disparo, error: dErr } = await supabase.from("cobranca_disparos")
-          .insert({ status: "enviando", total: itens.length }).select("id").single();
+          .insert({ status: "enviando", total: itens.length, instancia }).select("id").single();
         if (dErr) throw dErr;
         const { error: iErr } = await supabase.from("cobranca_disparo_itens")
           .insert(itens.map((it) => ({ ...it, disparo_id: disparo.id })));
@@ -324,7 +343,8 @@ Deno.serve(async (req) => {
         }
 
         try {
-          await enviarTexto(cfg, item.telefone, item.mensagem);
+          const { base, token } = await tokenDe(supabase, cfg, disparo.instancia);
+          await enviarTexto(base, token, item.telefone, item.mensagem);
           const agora = new Date().toISOString();
           await supabase.from("cobranca_disparo_itens").update({ status: "enviado", enviado_em: agora }).eq("id", item.id);
           // Só a cadência de inadimplência avança a ordem; 'dia_vencimento' só registra o último envio.

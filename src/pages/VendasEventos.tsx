@@ -52,7 +52,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { MoreHorizontal, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, X, Plus, Upload, Download, Copy } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, X, Plus, Upload, Download, Copy, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useProdutos } from "@/hooks/useProdutos";
 
@@ -277,6 +277,7 @@ const VendasEventos = () => {
     status: "aprovada",
     plataforma: "manual",
   });
+  const [sincronizando, setSincronizando] = useState(false);
   const queryClient = useQueryClient();
   const { tableRef, onResizeStart, onResizeDoubleClick } = useColumnResize();
   const { data: cidades = [] } = useCidades();
@@ -576,6 +577,21 @@ const VendasEventos = () => {
     queryClient.invalidateQueries({ queryKey: ["vendas-tabela"] });
   };
 
+  const handleSincronizarKiwify = async () => {
+    setSincronizando(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-kiwify");
+      if (error) throw error;
+      const inseridos = (data as any)?.convites_inseridos ?? 0;
+      toast.success(`Sincronização concluída — ${inseridos} convite(s) inserido(s). Relatório enviado no WhatsApp.`);
+      queryClient.invalidateQueries({ queryKey: ["vendas-tabela"] });
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao sincronizar com a Kiwify");
+    } finally {
+      setSincronizando(false);
+    }
+  };
+
   // ---- Importação CSV ----
   const [importOpen, setImportOpen] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -661,6 +677,10 @@ const VendasEventos = () => {
               </p>
             </div>
             <div className="ml-auto flex items-center gap-2">
+              <Button variant="outline" onClick={handleSincronizarKiwify} disabled={sincronizando}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${sincronizando ? "animate-spin" : ""}`} />
+                {sincronizando ? "Sincronizando..." : "Sincronizar com Kiwify"}
+              </Button>
               <Button variant="outline" onClick={() => setImportOpen(true)}>
                 <Upload className="mr-2 h-4 w-4" />
                 Importar Vendas (CSV)

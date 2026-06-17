@@ -20,12 +20,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
-import { Bot, Plus, Pencil, Trash2, Send, Wifi, WifiOff, RefreshCw, QrCode, Check, ChevronsUpDown, History, CheckCircle2, XCircle, LogOut } from "lucide-react";
+import { Bot, Plus, Pencil, Trash2, Send, RefreshCw, Check, ChevronsUpDown, History, CheckCircle2, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { syncMetaTokenToServer } from "@/lib/meta-ads";
 import { useCidades } from "@/hooks/useCidades";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { InstanciasUazapi, type Instancia } from "@/components/InstanciasUazapi";
 
 // Gatilhos disponíveis e as variáveis que cada um disponibiliza no template
 const GATILHOS: Record<string, { label: string; desc: string; vars: string[] }> = {
@@ -65,12 +66,14 @@ type Notificacao = {
   mensagem: string;
   cidade_slug: string | null;
   horario: string | null;
+  instancia?: string | null;
 };
 
 const emptyForm = {
   nome: "",
   gatilho: "nova_venda",
   ativo: true,
+  instancia: "" as string,
   destinatarios: [{ tipo: "grupo", valor: "", nome: "" }] as Dest[],
   mensagem: "",
   cidade_slug: null as string | null,
@@ -88,30 +91,13 @@ export default function Notificacoes() {
   const queryClient = useQueryClient();
   const { data: cidades = [] } = useCidades();
 
-  // ---- Conexão WhatsApp (UAZAPI) ----
-  // URL e admin token são padrão (secrets no backend). O usuário só cria/deleta a instância.
-  const [instanceNome, setInstanceNome] = useState("");
-  const [instanceSalva, setInstanceSalva] = useState<string | null>(null);
-  const [cfgStatus, setCfgStatus] = useState<string>("desconectado");
-  const [connecting, setConnecting] = useState(false);
-  const [criando, setCriando] = useState(false);
-  const [deletando, setDeletando] = useState(false);
-  const [qrCode, setQrCode] = useState<string | null>(null);
-  const [numeroConectado, setNumeroConectado] = useState<string | null>(null);
-  const [loadingStatus, setLoadingStatus] = useState(false);
+  // ---- Instâncias (pool compartilhado, gerenciado pelo componente) ----
+  const [instancias, setInstancias] = useState<Instancia[]>([]);
+  const conectadas = instancias.filter((i) => i.status === "connected" || i.status === "conectado");
+  const isConnected = conectadas.length > 0;
   const [loadingGrupos, setLoadingGrupos] = useState(false);
   const [testando, setTestando] = useState(false);     // botão do dialog
   const [testandoId, setTestandoId] = useState<string | null>(null); // botão da linha
-
-  const carregarConfig = useCallback(async () => {
-    const { data } = await (supabase as any).from("whatsapp_config").select("instance,status,numero").maybeSingle();
-    if (data) {
-      setInstanceSalva(data.instance || null);
-      setCfgStatus(data.status || "desconectado");
-      setNumeroConectado(data.numero || null);
-    }
-  }, []);
-  useEffect(() => { carregarConfig(); }, [carregarConfig]);
 
   const chamarUazapi = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
     const { data, error } = await supabase.functions.invoke("uazapi", { body: { action, ...payload } });
@@ -125,113 +111,13 @@ export default function Notificacoes() {
     return data;
   }, []);
 
-  // Atualiza o status. silent=true não mostra toasts (usado no auto-poll).
-  const refreshStatus = useCallback(async (silent = false): Promise<boolean> => {
-    if (!silent) setLoadingStatus(true);
-    try {
-      const data = await chamarUazapi("status");
-      const connected = data?.status === "connected" || data?.connected;
-      setCfgStatus(data?.status || "desconectado");
-      setNumeroConectado(data?.numero || null);
-      if (connected) { setQrCode(null); if (!silent) toast.success("Conectado!"); }
-      else if (data?.qrcode) setQrCode(data.qrcode);
-      return !!connected;
-    } catch (e: any) {
-      if (!silent) toast.error(e?.message || "Falha ao consultar status");
-      else setCfgStatus("erro");
-      return false;
-    } finally {
-      if (!silent) setLoadingStatus(false);
-    }
-  }, [chamarUazapi]);
-
-  // Após conectar, consulta o status a cada 3s por ~1min até conectar (detecta o scan sozinho)
-  const pollUntilConnected = useCallback(() => {
-    let tries = 0;
-    const id = setInterval(async () => {
-      tries++;
-      const ok = await refreshStatus(true);
-      if (ok || tries >= 20) clearInterval(id);
-    }, 3000);
-  }, [refreshStatus]);
-
-  const criarInstancia = async () => {
-    const nome = instanceNome.trim();
-    if (!nome) { toast.error("Digite um nome para a instância"); return; }
-    setCriando(true);
-    try {
-      await chamarUazapi("criar_instancia", { nome });
-      setInstanceSalva(nome);
-      setInstanceNome("");
-      toast.success(`Instância "${nome}" criada na UAZAPI. Clique em Conectar para gerar o QR.`);
-      await carregarConfig();
-    } catch (e: any) {
-      toast.error(e?.message || "Falha ao criar instância");
-    } finally {
-      setCriando(false);
-    }
-  };
-
-  const deletarInstancia = async () => {
-    if (!confirm(`Deletar a instância "${instanceSalva}" na UAZAPI? Esta ação é irreversível.`)) return;
-    setDeletando(true);
-    try {
-      await chamarUazapi("deletar_instancia");
-      setInstanceSalva(null); setQrCode(null); setNumeroConectado(null); setCfgStatus("desconectado");
-      toast.success("Instância deletada.");
-    } catch (e: any) {
-      toast.error(e?.message || "Falha ao deletar instância");
-    } finally {
-      setDeletando(false);
-    }
-  };
-
-  const conectar = async () => {
-    setConnecting(true);
-    setQrCode(null);
-    try {
-      const data = await chamarUazapi("connect");
-      if (data?.qrcode) setQrCode(data.qrcode);
-      if (data?.status) setCfgStatus(data.status);
-      toast.success("Escaneie o QR Code no WhatsApp");
-      pollUntilConnected();
-    } catch (e: any) {
-      toast.error(e?.message || "Falha ao conectar.");
-    } finally {
-      setConnecting(false);
-    }
-  };
-
-  const [desconectando, setDesconectando] = useState(false);
-  const desconectar = async () => {
-    if (!confirm("Desconectar o WhatsApp? Você precisará escanear o QR Code de novo para reconectar (mesmo aparelho ou outro).")) return;
-    setDesconectando(true);
-    try {
-      await chamarUazapi("disconnect");
-      setQrCode(null);
-      setNumeroConectado(null);
-      setCfgStatus("desconectado");
-      toast.success("WhatsApp desconectado. Clique em Conectar / Gerar QR para reconectar.");
-    } catch (e: any) {
-      toast.error(e?.message || "Falha ao desconectar");
-    } finally {
-      setDesconectando(false);
-    }
-  };
-
-  // Auto-poll do status: ao abrir e a cada 30s (reflete desconexões sozinho)
-  useEffect(() => {
-    refreshStatus(true);
-    const id = setInterval(() => refreshStatus(true), 30000);
-    return () => clearInterval(id);
-  }, [refreshStatus]);
-
-  // Grupos do WhatsApp (carregados sob demanda)
+  // Grupos do WhatsApp (carregados sob demanda) — usa uma instância conectada.
   const [grupos, setGrupos] = useState<Array<{ id: string; name: string }>>([]);
-  const carregarGrupos = async () => {
+  const carregarGrupos = async (instancia?: string) => {
     setLoadingGrupos(true);
     try {
-      const data = await chamarUazapi("groups");
+      const inst = instancia || conectadas[0]?.nome;
+      const data = await chamarUazapi("groups", { instancia: inst });
       setGrupos(data?.groups || []);
       toast.success(`${(data?.groups || []).length} grupo(s) carregado(s)`);
     } catch (e: any) {
@@ -297,6 +183,7 @@ export default function Notificacoes() {
       : [{ tipo: n.destinatario_tipo || "grupo", valor: n.destinatario || "", nome: n.destinatario_nome || "" }];
     setForm({
       nome: n.nome, gatilho: n.gatilho, ativo: n.ativo,
+      instancia: (n as any).instancia || "",
       destinatarios: dests, mensagem: n.mensagem,
       cidade_slug: n.cidade_slug, horario: n.horario || "09:00",
       disparo_dia_evento: (n as any).disparo_dia_evento || false,
@@ -318,6 +205,7 @@ export default function Notificacoes() {
     }
     const payload = {
       nome: form.nome, gatilho: form.gatilho, ativo: form.ativo,
+      instancia: form.instancia || null,
       mensagem: form.mensagem, cidade_slug: form.cidade_slug, horario: form.horario,
       disparo_dia_evento: form.disparo_dia_evento,
       horario_evento: form.horario_evento,
@@ -477,7 +365,6 @@ export default function Notificacoes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialogOpen]);
 
-  const isConnected = cfgStatus === "connected" || cfgStatus === "conectado";
   const gatilhoAtual = GATILHOS[form.gatilho];
   const precisaCidade = form.gatilho === "nova_venda" || form.gatilho === "resumo_cidade" || form.gatilho === "manual";
   const precisaHorario = form.gatilho === "resumo_cidade" || form.gatilho === "resumo_geral";
@@ -503,74 +390,18 @@ export default function Notificacoes() {
           </header>
 
           <div className="p-6 space-y-6">
-            {/* Conexão WhatsApp */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  {isConnected ? <Wifi className="h-4 w-4 text-success" /> : <WifiOff className="h-4 w-4 text-muted-foreground" />}
-                  Conexão WhatsApp (UAZAPI)
-                  <Badge variant={isConnected ? "default" : "secondary"} className="ml-2">
-                    {isConnected ? `Conectado${numeroConectado ? ` · ${numeroConectado}` : ""}` : cfgStatus}
-                  </Badge>
-                </CardTitle>
-                <CardDescription>
-                  Crie a instância com um nome e conecte escaneando o QR Code no WhatsApp.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {!instanceSalva ? (
-                  <div className="flex flex-wrap items-end gap-2">
-                    <div className="space-y-1">
-                      <Label>Nome da instância</Label>
-                      <Input placeholder="ex: scaledash" value={instanceNome} onChange={(e) => setInstanceNome(e.target.value)} className="w-64" />
-                    </div>
-                    <Button onClick={criarInstancia} disabled={criando}>
-                      <Plus className="mr-2 h-4 w-4" />{criando ? "Criando..." : "Criar instância"}
+            {/* Instâncias (pool compartilhado) */}
+            <InstanciasUazapi
+              funcao="uazapi"
+              onInstancias={setInstancias}
+              extraActions={(inst) => (
+                (inst.status === "connected" || inst.status === "conectado")
+                  ? <Button size="sm" variant="outline" onClick={() => carregarGrupos(inst.nome)} disabled={loadingGrupos}>
+                      {loadingGrupos ? "Carregando..." : "Carregar grupos"}
                     </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground">Instância:</span>
-                    <Badge variant="outline">{instanceSalva}</Badge>
-                  </div>
-                )}
-                {instanceSalva && (
-                <div className="flex flex-wrap gap-2">
-                  <Button onClick={conectar} disabled={connecting}>
-                    <QrCode className="mr-2 h-4 w-4" /> {connecting ? "Conectando..." : "Conectar / Gerar QR"}
-                  </Button>
-                  <Button variant="outline" onClick={() => refreshStatus(false)} disabled={loadingStatus}>
-                    <RefreshCw className={`mr-2 h-4 w-4 ${loadingStatus ? "animate-spin" : ""}`} />
-                    {loadingStatus ? "Atualizando..." : "Atualizar status"}
-                  </Button>
-                  <Button variant="outline" onClick={carregarGrupos} disabled={!isConnected || loadingGrupos}>
-                    {loadingGrupos && <RefreshCw className="mr-2 h-4 w-4 animate-spin" />}
-                    {loadingGrupos ? "Carregando..." : "Carregar grupos"}
-                  </Button>
-                  {isConnected && (
-                    <Button variant="destructive" onClick={desconectar} disabled={desconectando}>
-                      <LogOut className="mr-2 h-4 w-4" />
-                      {desconectando ? "Desconectando..." : "Desconectar"}
-                    </Button>
-                  )}
-                  <Button variant="outline" className="text-destructive" onClick={deletarInstancia} disabled={deletando}>
-                    <Trash2 className="mr-2 h-4 w-4" />{deletando ? "Deletando..." : "Deletar instância"}
-                  </Button>
-                </div>
-                )}
-                {qrCode && (
-                  <div className="flex flex-col items-center gap-2 pt-2">
-                    <img
-                      src={qrCode.startsWith("data:") ? qrCode : `data:image/png;base64,${qrCode}`}
-                      alt="QR Code WhatsApp" className="h-56 w-56 rounded-lg border border-border bg-white p-2"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      WhatsApp → Aparelhos conectados → Conectar aparelho → escaneie
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  : null
+              )}
+            />
 
             {/* Lista de notificações */}
             <div className="space-y-3">
@@ -645,6 +476,23 @@ export default function Notificacoes() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">{gatilhoAtual?.desc}</p>
+            </div>
+
+            <div className="space-y-1 md:col-span-2">
+              <Label>Instância de envio</Label>
+              <Select value={form.instancia || ""} onValueChange={(v) => setForm({ ...form, instancia: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione a instância" /></SelectTrigger>
+                <SelectContent>
+                  {instancias.length === 0
+                    ? <SelectItem value="__none" disabled>nenhuma instância criada</SelectItem>
+                    : instancias.map((i) => (
+                        <SelectItem key={i.nome} value={i.nome}>
+                          {i.nome}{(i.status === "connected" || i.status === "conectado") ? " · conectada" : ` · ${i.status}`}
+                        </SelectItem>
+                      ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">De qual WhatsApp essa notificação será enviada.</p>
             </div>
 
             <div className="space-y-2 md:col-span-2">

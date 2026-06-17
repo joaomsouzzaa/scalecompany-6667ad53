@@ -220,6 +220,7 @@ export type Database = {
           enviados: number
           erros: number
           id: string
+          instancia: string | null
           status: string
           total: number
           updated_at: string
@@ -229,6 +230,7 @@ export type Database = {
           enviados?: number
           erros?: number
           id?: string
+          instancia?: string | null
           status?: string
           total?: number
           updated_at?: string
@@ -238,8 +240,39 @@ export type Database = {
           enviados?: number
           erros?: number
           id?: string
+          instancia?: string | null
           status?: string
           total?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      uazapi_instancias: {
+        Row: {
+          created_at: string
+          id: string
+          instance_token: string | null
+          nome: string
+          numero: string | null
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          instance_token?: string | null
+          nome: string
+          numero?: string | null
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          instance_token?: string | null
+          nome?: string
+          numero?: string | null
+          status?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -884,6 +917,7 @@ export type Database = {
           horario: string | null
           horario_evento: string | null
           id: string
+          instancia: string | null
           mensagem: string
           nome: string
           sheets_aba: string | null
@@ -905,6 +939,7 @@ export type Database = {
           horario?: string | null
           horario_evento?: string | null
           id?: string
+          instancia?: string | null
           mensagem: string
           nome: string
           sheets_aba?: string | null
@@ -926,6 +961,7 @@ export type Database = {
           horario?: string | null
           horario_evento?: string | null
           id?: string
+          instancia?: string | null
           mensagem?: string
           nome?: string
           sheets_aba?: string | null

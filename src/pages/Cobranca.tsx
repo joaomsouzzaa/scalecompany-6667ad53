@@ -24,12 +24,10 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  CreditCard, Plus, Pencil, Trash2, Wifi, WifiOff, RefreshCw, QrCode,
-  LogOut, Upload, Send, AlertTriangle,
-} from "lucide-react";
+import { CreditCard, Plus, Pencil, Trash2, Upload, Send, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { InstanciasUazapi, type Instancia } from "@/components/InstanciasUazapi";
 
 // ===================================================================
 // Parser da planilha "Fluxo de Caixa Semanal" (Google Sheets → CSV).
@@ -165,29 +163,10 @@ const CATEGORIAS = [
 const emptyMsg = { ordem: 1, nome: "", mensagem: "", ativo: true, categoria: "inadimplente" };
 
 export default function Cobranca() {
-  // ---- Conexão WhatsApp (UAZAPI — instância exclusiva da Cobrança) ----
-  // URL e admin token são padrão (secrets no backend). O usuário só cria/deleta a instância.
-  const [instanceNome, setInstanceNome] = useState("");   // input para criar
-  const [instanceSalva, setInstanceSalva] = useState<string | null>(null); // instância já criada
-  const [cfgStatus, setCfgStatus] = useState<string>("desconectado");
-  const [connecting, setConnecting] = useState(false);
-  const [criando, setCriando] = useState(false);
-  const [deletando, setDeletando] = useState(false);
-  const [qrCode, setQrCode] = useState<string | null>(null);
-  const [numeroConectado, setNumeroConectado] = useState<string | null>(null);
-  const [loadingStatus, setLoadingStatus] = useState(false);
-  const [desconectando, setDesconectando] = useState(false);
-  const isConnected = cfgStatus === "connected" || cfgStatus === "conectado";
-
-  const carregarConfig = useCallback(async () => {
-    const { data } = await (supabase as any).from("cobranca_whatsapp_config").select("instance,status,numero").maybeSingle();
-    if (data) {
-      setInstanceSalva(data.instance || null);
-      setCfgStatus(data.status || "desconectado");
-      setNumeroConectado(data.numero || null);
-    }
-  }, []);
-  useEffect(() => { carregarConfig(); }, [carregarConfig]);
+  // ---- Instâncias (pool compartilhado; gerenciado pelo componente) ----
+  const [instancias, setInstancias] = useState<Instancia[]>([]);
+  const [instanciaSel, setInstanciaSel] = useState<string>("");
+  const conectadas = instancias.filter((i) => i.status === "connected" || i.status === "conectado");
 
   const chamar = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
     const { data, error } = await supabase.functions.invoke("cobranca", { body: { action, ...payload } });
@@ -199,101 +178,6 @@ export default function Cobranca() {
     if (data?.error) throw new Error(data.error);
     return data;
   }, []);
-
-  const refreshStatus = useCallback(async (silent = false): Promise<boolean> => {
-    if (!silent) setLoadingStatus(true);
-    try {
-      const data = await chamar("status");
-      const connected = data?.status === "connected" || data?.connected;
-      setCfgStatus(data?.status || "desconectado");
-      setNumeroConectado(data?.numero || null);
-      if (connected) { setQrCode(null); if (!silent) toast.success("Conectado!"); }
-      else if (data?.qrcode) setQrCode(data.qrcode);
-      return !!connected;
-    } catch (e: any) {
-      if (!silent) toast.error(e?.message || "Falha ao consultar status");
-      else setCfgStatus("erro");
-      return false;
-    } finally {
-      if (!silent) setLoadingStatus(false);
-    }
-  }, [chamar]);
-
-  const pollUntilConnected = useCallback(() => {
-    let tries = 0;
-    const id = setInterval(async () => {
-      tries++;
-      const ok = await refreshStatus(true);
-      if (ok || tries >= 20) clearInterval(id);
-    }, 3000);
-  }, [refreshStatus]);
-
-  const criarInstancia = async () => {
-    const nome = instanceNome.trim();
-    if (!nome) { toast.error("Digite um nome para a instância"); return; }
-    setCriando(true);
-    try {
-      await chamar("criar_instancia", { nome });
-      setInstanceSalva(nome);
-      setInstanceNome("");
-      toast.success(`Instância "${nome}" criada na UAZAPI. Clique em Conectar para gerar o QR.`);
-      await carregarConfig();
-    } catch (e: any) {
-      toast.error(e?.message || "Falha ao criar instância");
-    } finally {
-      setCriando(false);
-    }
-  };
-
-  const deletarInstancia = async () => {
-    if (!confirm(`Deletar a instância "${instanceSalva}" na UAZAPI? Esta ação é irreversível.`)) return;
-    setDeletando(true);
-    try {
-      await chamar("deletar_instancia");
-      setInstanceSalva(null); setQrCode(null); setNumeroConectado(null); setCfgStatus("desconectado");
-      toast.success("Instância deletada.");
-    } catch (e: any) {
-      toast.error(e?.message || "Falha ao deletar instância");
-    } finally {
-      setDeletando(false);
-    }
-  };
-
-  const conectar = async () => {
-    setConnecting(true);
-    setQrCode(null);
-    try {
-      const data = await chamar("connect");
-      if (data?.qrcode) setQrCode(data.qrcode);
-      if (data?.status) setCfgStatus(data.status);
-      toast.success("Escaneie o QR Code no WhatsApp");
-      pollUntilConnected();
-    } catch (e: any) {
-      toast.error(e?.message || "Falha ao conectar.");
-    } finally {
-      setConnecting(false);
-    }
-  };
-
-  const desconectar = async () => {
-    if (!confirm("Desconectar o WhatsApp da Cobrança? Você precisará escanear o QR Code de novo.")) return;
-    setDesconectando(true);
-    try {
-      await chamar("disconnect");
-      setQrCode(null); setNumeroConectado(null); setCfgStatus("desconectado");
-      toast.success("WhatsApp desconectado.");
-    } catch (e: any) {
-      toast.error(e?.message || "Falha ao desconectar");
-    } finally {
-      setDesconectando(false);
-    }
-  };
-
-  useEffect(() => {
-    refreshStatus(true);
-    const id = setInterval(() => refreshStatus(true), 30000);
-    return () => clearInterval(id);
-  }, [refreshStatus]);
 
   // ---- Banco de mensagens (cadência por categoria) ----
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
@@ -404,6 +288,7 @@ export default function Cobranca() {
   const gerar = () => {
     if (!totalSelecionados) { toast.error("Selecione ao menos uma linha com telefone válido"); return; }
     setItensConfer([...selecionadosReceber, ...selecionadosInad]);
+    if (!instanciaSel && conectadas.length) setInstanciaSel(conectadas[0].nome);
     setEspelhoOpen(false);
     setConferOpen(true);
   };
@@ -412,7 +297,8 @@ export default function Cobranca() {
   const [progresso, setProgresso] = useState<{ total: number; enviados: number; erros: number; status: string } | null>(null);
 
   const comecar = async () => {
-    if (!isConnected) { toast.error("Conecte o WhatsApp antes de disparar"); return; }
+    if (!instanciaSel) { toast.error("Selecione a instância de envio"); return; }
+    if (!conectadas.some((i) => i.nome === instanciaSel)) { toast.error("A instância selecionada não está conectada"); return; }
     setIniciando(true);
     try {
       const itens = itensConfer.map((r) => ({
@@ -422,7 +308,7 @@ export default function Cobranca() {
         categoria: r._tipo === "receber" ? "dia_vencimento" : "inadimplente",
         ordem: r._tipo === "inadimplente" ? (r.proxima_ordem ?? null) : null,
       }));
-      const data = await chamar("preparar_lote", { itens });
+      const data = await chamar("preparar_lote", { itens, instancia: instanciaSel });
       setDisparoId(data.disparo_id);
       setProgresso({ total: data.total, enviados: 0, erros: 0, status: "enviando" });
       setConferOpen(false);
@@ -525,49 +411,8 @@ export default function Cobranca() {
           </header>
 
           <div className="p-6 space-y-6 max-w-6xl">
-            {/* Conexão WhatsApp */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  {isConnected ? <Wifi className="h-4 w-4 text-success" /> : <WifiOff className="h-4 w-4 text-muted-foreground" />}
-                  Conexão WhatsApp (UAZAPI · Cobrança)
-                  <Badge variant={isConnected ? "default" : "secondary"} className="ml-2">
-                    {isConnected ? `Conectado${numeroConectado ? ` · ${numeroConectado}` : ""}` : cfgStatus}
-                  </Badge>
-                </CardTitle>
-                <CardDescription>Instância exclusiva da cobrança (separada das Notificações). Crie a instância e conecte escaneando o QR Code.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {!instanceSalva ? (
-                  <div className="flex flex-wrap items-end gap-2">
-                    <div className="space-y-1">
-                      <Label>Nome da instância</Label>
-                      <Input placeholder="ex: cobranca" value={instanceNome} onChange={(e) => setInstanceNome(e.target.value)} className="w-64" />
-                    </div>
-                    <Button onClick={criarInstancia} disabled={criando}><Plus className="mr-2 h-4 w-4" />{criando ? "Criando..." : "Criar instância"}</Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground">Instância:</span>
-                    <Badge variant="outline">{instanceSalva}</Badge>
-                  </div>
-                )}
-                {instanceSalva && (
-                <div className="flex flex-wrap gap-2">
-                  <Button onClick={conectar} disabled={connecting}><QrCode className="mr-2 h-4 w-4" /> {connecting ? "Conectando..." : "Conectar / Gerar QR"}</Button>
-                  <Button variant="outline" onClick={() => refreshStatus(false)} disabled={loadingStatus}><RefreshCw className={`mr-2 h-4 w-4 ${loadingStatus ? "animate-spin" : ""}`} />{loadingStatus ? "Atualizando..." : "Atualizar status"}</Button>
-                  {isConnected && <Button variant="destructive" onClick={desconectar} disabled={desconectando}><LogOut className="mr-2 h-4 w-4" />{desconectando ? "Desconectando..." : "Desconectar"}</Button>}
-                  <Button variant="outline" className="text-destructive" onClick={deletarInstancia} disabled={deletando}><Trash2 className="mr-2 h-4 w-4" />{deletando ? "Deletando..." : "Deletar instância"}</Button>
-                </div>
-                )}
-                {qrCode && (
-                  <div className="flex flex-col items-center gap-2 pt-2">
-                    <img src={qrCode.startsWith("data:") ? qrCode : `data:image/png;base64,${qrCode}`} alt="QR Code WhatsApp" className="h-56 w-56 rounded-lg border border-border bg-white p-2" />
-                    <p className="text-xs text-muted-foreground">WhatsApp → Aparelhos conectados → Conectar aparelho → escaneie</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {/* Instâncias (pool compartilhado) */}
+            <InstanciasUazapi funcao="cobranca" onInstancias={setInstancias} />
 
             {/* Progresso do disparo */}
             {progresso && (
@@ -729,9 +574,20 @@ export default function Cobranca() {
               </TableBody>
             </Table>
           </div>
-          <DialogFooter>
+          <DialogFooter className="items-center">
+            <div className="mr-auto flex items-center gap-2">
+              <Label className="text-xs whitespace-nowrap">Enviar pela instância:</Label>
+              <Select value={instanciaSel} onValueChange={setInstanciaSel}>
+                <SelectTrigger className="h-8 w-44"><SelectValue placeholder="selecione" /></SelectTrigger>
+                <SelectContent>
+                  {conectadas.length === 0
+                    ? <SelectItem value="__none" disabled>nenhuma conectada</SelectItem>
+                    : conectadas.map((i) => <SelectItem key={i.nome} value={i.nome}>{i.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <Button variant="outline" onClick={() => { setConferOpen(false); setEspelhoOpen(true); }}>Voltar</Button>
-            <Button onClick={comecar} disabled={iniciando || !itensConfer.length}><Send className="mr-2 h-4 w-4" /> {iniciando ? "Iniciando..." : "Começar"}</Button>
+            <Button onClick={comecar} disabled={iniciando || !itensConfer.length || !instanciaSel}><Send className="mr-2 h-4 w-4" /> {iniciando ? "Iniciando..." : "Começar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
