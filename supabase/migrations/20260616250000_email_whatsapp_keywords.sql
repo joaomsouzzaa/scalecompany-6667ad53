@@ -16,3 +16,16 @@ ALTER TABLE public.email_config
 ALTER TABLE public.email_mensagens
   ADD COLUMN IF NOT EXISTS resumo TEXT,
   ADD COLUMN IF NOT EXISTS categoria TEXT;
+
+-- RLS: o app acessa com a chave anon (sem login), como o resto do ScaleDash.
+-- As policies do Lovable liberavam só "authenticated", o que bloqueava o salvar.
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.email_config TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.email_mensagens TO anon;
+
+DROP POLICY IF EXISTS "anon manage email_config" ON public.email_config;
+CREATE POLICY "anon manage email_config" ON public.email_config
+  FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "anon manage email_mensagens" ON public.email_mensagens;
+CREATE POLICY "anon manage email_mensagens" ON public.email_mensagens
+  FOR ALL TO anon USING (true) WITH CHECK (true);
