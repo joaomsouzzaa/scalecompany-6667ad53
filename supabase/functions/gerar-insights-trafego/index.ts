@@ -129,10 +129,14 @@ Deno.serve(async (req) => {
     const apiKey = cfg?.api_key || Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) return json({ error: `Configure a API key do provider ${agente.provider}` }, 400);
 
-    // Cidades ativas (evento de hoje em diante, fuso SP).
-    const hojeSP = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    // Cidades ATIVAS: mesma regra do dashboard — ativa até 48h após a meia-noite do evento.
+    const AGORA = Date.now();
     const { data: cids } = await supabase.from("cidades").select("nome,slug,data_evento");
-    const ativas = (cids || []).filter((c: any) => !c.data_evento || String(c.data_evento).slice(0, 10) >= hojeSP);
+    const ativas = (cids || []).filter((c: any) => {
+      if (!c.data_evento) return true;
+      const ev = new Date(c.data_evento); ev.setHours(0, 0, 0, 0);
+      return AGORA <= ev.getTime() + 48 * 60 * 60 * 1000; // evento + 48h
+    });
 
     let geradas = 0;
     const erros: string[] = [];
