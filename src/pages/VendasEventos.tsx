@@ -580,10 +580,22 @@ const VendasEventos = () => {
   const handleSincronizarKiwify = async () => {
     setSincronizando(true);
     try {
-      const { data, error } = await supabase.functions.invoke("sync-kiwify");
+      const { data, error } = await supabase.functions.invoke("sync-kiwify", {
+        body: { full: true },
+      });
       if (error) throw error;
+      console.log("[sync-kiwify] resposta completa:", data);
       const inseridos = (data as any)?.convites_inseridos ?? 0;
-      toast.success(`Sincronização concluída — ${inseridos} convite(s) inserido(s). Relatório enviado no WhatsApp.`);
+      // Diagnóstico por cidade (a função retorna `detalhe`): mostra Kiwify x banco
+      // pra entender quando insere 0.
+      const det = (data as any)?.detalhe as Array<any> | undefined;
+      const resumo = (det || [])
+        .map((c) => `${c.cidade}: Kiwify ${c.kiwify_total} · já no banco ${c.ja_no_banco} · inseridos ${c.convites_inseridos?.length ?? 0} · faltando ${c.vendas_faltando?.length ?? 0}`)
+        .join("\n");
+      toast.success(
+        `Sincronização concluída — ${inseridos} convite(s) inserido(s).${resumo ? "\n" + resumo : ""}`,
+        { duration: 15000 }
+      );
       queryClient.invalidateQueries({ queryKey: ["vendas-tabela"] });
     } catch (e: any) {
       toast.error(e?.message || "Erro ao sincronizar com a Kiwify");

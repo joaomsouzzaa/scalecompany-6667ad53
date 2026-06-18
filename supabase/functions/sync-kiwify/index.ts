@@ -331,13 +331,22 @@ Deno.serve(async (req) => {
     if (body?.action === "backfill_ingressos") {
       return json(await backfillIngressos(supabase));
     }
+    // Sync manual (botão "Sincronizar com Kiwify"): processa TODAS as cidades e
+    // todo o histórico, sem filtro de cidade ativa nem janela de 72h.
+    const fullSync = body?.full === true || body?.action === "full";
 
     const token = await getToken();
 
-    // Cidades ATIVAS (evento de hoje em diante).
-    const hoje = hojeSPstr();
+    // Cidades ATIVAS: mesma regra do dashboard (DashboardFilters.tsx) — a cidade
+    // continua ativa até 48h após a meia-noite do evento; depois disso sai da
+    // sincronização. Vale tanto pro automático quanto pro manual (full).
+    const AGORA = Date.now();
     const { data: cids } = await supabase.from("cidades").select("nome,slug,data_evento");
-    const ativas = (cids || []).filter((c: any) => !c.data_evento || String(c.data_evento).slice(0, 10) >= hoje);
+    const ativas = (cids || []).filter((c: any) => {
+      if (!c.data_evento) return true;
+      const ev = new Date(c.data_evento); ev.setHours(0, 0, 0, 0);
+      return AGORA <= ev.getTime() + 48 * 60 * 60 * 1000; // evento + 48h
+    });
     if (ativas.length === 0) {
       const rel0 = await enviarRelatorio(supabase, montarRelatorio([], 0));
       return json({ success: true, msg: "Nenhuma cidade ativa", inseridos: 0, relatorio: rel0 });
@@ -385,9 +394,12 @@ Deno.serve(async (req) => {
     };
 
     let inseridos = 0;
-    // Janela de processamento: últimas 72h (sync diário leve).
+    // Janela de processamento: últimas 72h no sync automático (leve). Quando
+    // chamado com { full: true } (botão "Sincronizar com Kiwify" da tela de
+    // Vendas), processa TODO o histórico — sem janela — pra puxar convites
+    // antigos que ficaram pra trás.
     const JANELA_HORAS = 72;
-    const CUTOFF_MS = Date.now() - JANELA_HORAS * 3600 * 1000;
+    const CUTOFF_MS = fullSync ? -Infinity : Date.now() - JANELA_HORAS * 3600 * 1000;
     // Acumula participantes p/ gravar ingressos_emitidos EM LOTE no fim (upsert
     // por participante estourava o timeout de 150s).
     const partsTodos: { part: any; cidadeNome: string }[] = [];
