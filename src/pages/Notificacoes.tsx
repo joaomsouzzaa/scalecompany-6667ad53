@@ -50,6 +50,11 @@ const GATILHOS: Record<string, { label: string; desc: string; vars: string[] }> 
     desc: "Enviado quando você clicar em Enviar. Usa o resumo da cidade selecionada.",
     vars: ["cidade", "participantes", "vips", "convidados", "bilheteria", "bilheteria_resultado", "cac", "projecao", "investimento", "projecao_investimento"],
   },
+  relatorio_sync: {
+    label: "Relatório de sincronização (Kiwify)",
+    desc: "Para onde vai o relatório da sincronização com a Kiwify (automática e manual). A mensagem é usada como cabeçalho.",
+    vars: [],
+  },
 };
 
 type Dest = { tipo: string; valor: string; nome: string }; // tipo: grupo | numero
