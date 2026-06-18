@@ -1,4 +1,4 @@
-project_id = "dobexeqizssojpzuhkfn"
+project_id = "ocbmwwulvpexcixywcdj"
 
 [functions.exchange-token]
 verify_jwt = false
@@ -7,4 +7,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.webhook-mentoria]
+verify_jwt = false
+
+[functions.webhook-vendas]
 verify_jwt = false

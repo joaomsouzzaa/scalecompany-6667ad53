@@ -1,0 +1,64 @@
+name: Migrar banco (Lovable -> novo Supabase)
+
+# Dispara manualmente em Actions -> "Migrar banco" -> Run workflow.
+# Requer 2 secrets no repo (Settings -> Secrets and variables -> Actions):
+#   OLD_DB_URL  -> Session pooler (porta 5432) do projeto ANTIGO (Lovable)
+#   NEW_DB_URL  -> Session pooler (porta 5432) do projeto NOVO
+# Use sempre a string do "Session pooler" (IPv4); o runner do GitHub nao tem IPv6.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reset_public:
+        description: "Resetar o schema public do banco NOVO antes de restaurar (recomendado)"
+        type: boolean
+        default: true
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar Supabase CLI
+        run: |
+          curl -fsSL https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz -o sb.tgz
+          tar -xzf sb.tgz
+          sudo mv supabase /usr/local/bin/
+          supabase --version
+
+      - name: Instalar psql 17
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          psql --version
+
+      - name: Dump do banco ANTIGO
+        env:
+          OLD: ${{ secrets.OLD_DB_URL }}
+        run: |
+          echo "== roles =="
+          supabase db dump --db-url "$OLD" -f roles.sql --role-only
+          echo "== schema =="
+          supabase db dump --db-url "$OLD" -f schema.sql
+          echo "== dados =="
+          supabase db dump --db-url "$OLD" -f data.sql --data-only --use-copy
+          echo "Tamanhos:"; ls -lh roles.sql schema.sql data.sql
+
+      - name: Restaurar no banco NOVO
+        env:
+          NEW: ${{ secrets.NEW_DB_URL }}
+          RESET: ${{ inputs.reset_public }}
+        run: |
+          if [ "$RESET" = "true" ]; then
+            echo "== resetando schema public =="
+            psql "$NEW" -v ON_ERROR_STOP=1 -c 'drop schema if exists public cascade; create schema public; grant usage on schema public to anon, authenticated, service_role; grant all on schema public to postgres;'
+          fi
+          echo "== roles (ignora erros de role ja existente) =="
+          psql "$NEW" -f roles.sql || true
+          echo "== schema =="
+          psql "$NEW" --single-transaction -v ON_ERROR_STOP=1 -f schema.sql
+          echo "== dados =="
+          psql "$NEW" --single-transaction -v ON_ERROR_STOP=1 -c 'SET session_replication_role = replica;' -f data.sql
+          echo "== contagem de tabelas no novo =="
+          psql "$NEW" -c "select count(*) as tabelas from information_schema.tables where table_schema='public';"
