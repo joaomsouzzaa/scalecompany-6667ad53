@@ -106,36 +106,91 @@ function ingressoDeParticipante(part: any, cidadeNome: string, vendaId: string |
 
 const fmtSP = () => new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
+// Busca destinatários do relatório na tabela `notificacoes`:
+// linha mais recente com gatilho='relatorio_sync' e ativo=true.
+// Retorna a lista de números/JIDs (com fallback) + cabeçalho opcional + id da notificação.
+async function destinatariosRelatorio(supabase: any): Promise<{ numeros: string[]; cabecalho: string; notificacao_id: string | null }> {
+  const { data: notif } = await supabase
+    .from("notificacoes")
+    .select("id,mensagem,destinatario,destinatarios")
+    .eq("gatilho", "relatorio_sync")
+    .eq("ativo", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!notif) return { numeros: [RELATORIO_NUMERO_FALLBACK], cabecalho: "", notificacao_id: null };
+
+  const numeros: string[] = [];
+  const arr = Array.isArray(notif.destinatarios) ? notif.destinatarios : [];
+  for (const d of arr) {
+    const v = (d && typeof d === "object") ? String(d.valor || "").trim() : String(d || "").trim();
+    if (v) numeros.push(v);
+  }
+  if (numeros.length === 0 && notif.destinatario) {
+    const v = String(notif.destinatario).trim();
+    if (v) numeros.push(v);
+  }
+  if (numeros.length === 0) numeros.push(RELATORIO_NUMERO_FALLBACK);
+  return { numeros, cabecalho: (notif.mensagem || "").toString(), notificacao_id: notif.id };
+}
+
 // Envia o relatório (com chunking) DIRETO na UAZAPI (lê whatsapp_config).
 // Evita o hop de chamar a função uazapi via HTTP (que falhava em silêncio).
-// Retorna um diagnóstico para aparecer no JSON do sync.
+// Para cada destinatário registra uma linha em notificacao_logs.
 async function enviarRelatorio(supabase: any, mensagem: string) {
-  const diag: { enviados: number; erros: string[] } = { enviados: 0, erros: [] };
+  const diag: { enviados: number; erros: string[]; destinatarios: number } = { enviados: 0, erros: [], destinatarios: 0 };
   const { data: cfg } = await supabase.from("whatsapp_config").select("server_url,admin_token,status").maybeSingle();
   if (!cfg?.server_url || !cfg?.admin_token) { diag.erros.push("whatsapp_config incompleto"); return diag; }
   const base = String(cfg.server_url).replace(/\/$/, "");
   const token = cfg.admin_token;
 
+  const { numeros, cabecalho, notificacao_id } = await destinatariosRelatorio(supabase);
+  diag.destinatarios = numeros.length;
+  const textoFinal = cabecalho ? `${cabecalho.trim()}\n\n${mensagem}` : mensagem;
+
   const MAX = 3500;
   const chunks: string[] = [];
   let atual = "";
-  for (const linha of mensagem.split("\n")) {
+  for (const linha of textoFinal.split("\n")) {
     if ((atual + linha + "\n").length > MAX && atual) { chunks.push(atual); atual = ""; }
     atual += linha + "\n";
   }
   if (atual.trim()) chunks.push(atual);
 
-  for (const chunk of chunks) {
-    try {
-      const r = await fetch(`${base}/send/text`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", token, admintoken: token },
-        body: JSON.stringify({ number: RELATORIO_NUMERO, text: chunk.trimEnd() }),
-      });
-      if (r.ok) diag.enviados++;
-      else { const t = await r.text(); diag.erros.push(`HTTP ${r.status}: ${t.slice(0, 200)}`); }
-    } catch (e) {
-      diag.erros.push((e as any)?.message || String(e));
+  for (const number of numeros) {
+    for (const chunk of chunks) {
+      const payload = chunk.trimEnd();
+      let status = "enviado";
+      let erro: string | null = null;
+      try {
+        const r = await fetch(`${base}/send/text`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", token, admintoken: token },
+          body: JSON.stringify({ number, text: payload }),
+        });
+        if (r.ok) {
+          diag.enviados++;
+        } else {
+          const t = await r.text();
+          status = "erro";
+          erro = `HTTP ${r.status}: ${t.slice(0, 200)}`;
+          diag.erros.push(`${number}: ${erro}`);
+        }
+      } catch (e) {
+        status = "erro";
+        erro = (e as any)?.message || String(e);
+        diag.erros.push(`${number}: ${erro}`);
+      }
+      try {
+        await supabase.from("notificacao_logs").insert({
+          notificacao_id,
+          destinatario: number,
+          status,
+          erro,
+          mensagem: payload,
+        });
+      } catch (_) { /* log opcional */ }
     }
   }
   return diag;
