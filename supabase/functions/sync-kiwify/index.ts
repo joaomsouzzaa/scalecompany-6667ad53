@@ -7,8 +7,8 @@ const corsHeaders = {
 
 const BASE = "https://public-api.kiwify.com/v1";
 
-// Número que recebe o relatório da sincronização via UAZAPI (instância conectada).
-const RELATORIO_NUMERO = "5581996125512";
+// Fallback usado só quando não houver notificação 'relatorio_sync' ativa cadastrada.
+const RELATORIO_NUMERO_FALLBACK = "5581996125512";
 
 function svc() {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
