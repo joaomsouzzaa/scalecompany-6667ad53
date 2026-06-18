@@ -166,7 +166,6 @@ export type Database = {
       }
       cobranca_disparo_itens: {
         Row: {
-          categoria: string
           created_at: string
           disparo_id: string
           enviado_em: string | null
@@ -179,7 +178,6 @@ export type Database = {
           telefone: string
         }
         Insert: {
-          categoria?: string
           created_at?: string
           disparo_id: string
           enviado_em?: string | null
@@ -192,7 +190,6 @@ export type Database = {
           telefone: string
         }
         Update: {
-          categoria?: string
           created_at?: string
           disparo_id?: string
           enviado_em?: string | null
@@ -247,40 +244,9 @@ export type Database = {
         }
         Relationships: []
       }
-      uazapi_instancias: {
-        Row: {
-          created_at: string
-          id: string
-          instance_token: string | null
-          nome: string
-          numero: string | null
-          status: string | null
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          instance_token?: string | null
-          nome: string
-          numero?: string | null
-          status?: string | null
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          instance_token?: string | null
-          nome?: string
-          numero?: string | null
-          status?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
       cobranca_mensagens: {
         Row: {
           ativo: boolean
-          categoria: string
           created_at: string
           id: string
           mensagem: string
@@ -289,7 +255,6 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
-          categoria?: string
           created_at?: string
           id?: string
           mensagem: string
@@ -298,7 +263,6 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
-          categoria?: string
           created_at?: string
           id?: string
           mensagem?: string
@@ -366,11 +330,13 @@ export type Database = {
       }
       email_config: {
         Row: {
+          ativo: boolean
           from_name: string | null
           id: number
           imap_host: string | null
           imap_port: number | null
           keywords: string[] | null
+          nome: string | null
           password: string | null
           smtp_host: string | null
           smtp_port: number | null
@@ -380,11 +346,13 @@ export type Database = {
           whatsapp_destino: string | null
         }
         Insert: {
+          ativo?: boolean
           from_name?: string | null
           id?: number
           imap_host?: string | null
           imap_port?: number | null
           keywords?: string[] | null
+          nome?: string | null
           password?: string | null
           smtp_host?: string | null
           smtp_port?: number | null
@@ -394,11 +362,13 @@ export type Database = {
           whatsapp_destino?: string | null
         }
         Update: {
+          ativo?: boolean
           from_name?: string | null
           id?: number
           imap_host?: string | null
           imap_port?: number | null
           keywords?: string[] | null
+          nome?: string | null
           password?: string | null
           smtp_host?: string | null
           smtp_port?: number | null
@@ -416,6 +386,7 @@ export type Database = {
           categoria: string | null
           created_at: string
           draft_reply: string | null
+          email_config_id: number | null
           from_email: string | null
           from_name: string | null
           id: string
@@ -434,6 +405,7 @@ export type Database = {
           categoria?: string | null
           created_at?: string
           draft_reply?: string | null
+          email_config_id?: number | null
           from_email?: string | null
           from_name?: string | null
           id?: string
@@ -452,6 +424,7 @@ export type Database = {
           categoria?: string | null
           created_at?: string
           draft_reply?: string | null
+          email_config_id?: number | null
           from_email?: string | null
           from_name?: string | null
           id?: string
@@ -464,7 +437,15 @@ export type Database = {
           to_email?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "email_mensagens_email_config_id_fkey"
+            columns: ["email_config_id"]
+            isOneToOne: false
+            referencedRelation: "email_config"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       google_config: {
         Row: {
