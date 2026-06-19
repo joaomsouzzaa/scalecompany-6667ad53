@@ -179,7 +179,7 @@ export default function Notificacoes() {
   // Envia um e-mail de TESTE (só e-mail), renderizando o template com valores de exemplo.
   const [testandoEmail, setTestandoEmail] = useState(false);
   const enviarEmailTeste = async () => {
-    const to = emailParaJoin(form.email_destinatarios);
+    const to = renderExemplo(emailParaJoin(form.email_destinatarios));
     if (!to) { toast.error("Informe ao menos um destinatário de e-mail"); return; }
     if (!form.email_corpo.trim()) { toast.error("Preencha o corpo do e-mail"); return; }
     setTestandoEmail(true);

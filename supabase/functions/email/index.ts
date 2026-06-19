@@ -487,6 +487,21 @@ Deno.serve(async (req) => {
       } finally {
         await smtp.close();
       }
+      // SMTP não grava na pasta Enviados; grava via IMAP para ficar visível no webmail.
+      try {
+        const from = cfg.from_name ? `${cfg.from_name} <${cfg.username}>` : cfg.username;
+        const dominio = (cfg.username.split("@")[1] || "local").trim();
+        const raw = [
+          `From: ${from}`,
+          `To: ${to.join(", ")}`,
+          `Subject: ${subject || "(sem assunto)"}`,
+          `Date: ${new Date().toUTCString().replace("GMT", "+0000")}`,
+          `Message-ID: <${crypto.randomUUID()}@${dominio}>`,
+          "MIME-Version: 1.0",
+          "Content-Type: text/html; charset=utf-8",
+        ].join("\r\n") + "\r\n\r\n" + html.replace(/\r?\n/g, "\r\n");
+        await gravarEnviados(cfg, raw);
+      } catch (e) { console.error("[email] gravar Enviados (send_custom) falhou:", (e as any)?.message || e); }
       return json({ ok: true, enviados: to.length });
     }
 
