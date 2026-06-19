@@ -22,9 +22,9 @@ import {
 } from "@/lib/facebook-sdk";
 import { exchangeForLongLivedToken, isTokenExpired, clearTokenExpired, clearAdAccountsCache, clearRateLimitFlag, hydrateMetaTokenFromServer } from "@/lib/meta-ads";
 
-const WEBHOOK_VENDAS_URL = "https://dobexeqizssojpzuhkfn.supabase.co/functions/v1/webhook-vendas";
-const WEBHOOK_LEADS_URL = "https://dobexeqizssojpzuhkfn.supabase.co/functions/v1/webhook-leads";
-const WEBHOOK_MENTORIA_URL = "https://dobexeqizssojpzuhkfn.supabase.co/functions/v1/webhook-mentoria";
+const WEBHOOK_VENDAS_URL = "https://ocbmwwulvpexcixywcdj.supabase.co/functions/v1/webhook-vendas";
+const WEBHOOK_LEADS_URL = "https://ocbmwwulvpexcixywcdj.supabase.co/functions/v1/webhook-leads";
+const WEBHOOK_MENTORIA_URL = "https://ocbmwwulvpexcixywcdj.supabase.co/functions/v1/webhook-mentoria";
 
 const WebhookSection = () => {
   const [copied, setCopied] = useState(false);
