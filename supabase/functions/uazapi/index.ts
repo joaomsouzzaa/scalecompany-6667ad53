@@ -116,6 +116,23 @@ async function enviarSheets(n: any, vars: Record<string, string | number>) {
   } catch (e) { console.log("Sheets append falhou:", (e as any)?.message || e); }
 }
 
+// Envia um e-mail (via função `email`, action send_custom) se a notificação tiver
+// e-mail ativo. Assunto/corpo/destinatário aceitam {{variáveis}}.
+async function enviarEmailNotif(n: any, vars: Record<string, string | number>) {
+  if (!n.email_ativo || !n.email_para) return;
+  const to = render(String(n.email_para), vars);
+  const subject = render(String(n.email_assunto || ""), vars);
+  const body = render(String(n.email_corpo || ""), vars);
+  if (!to.trim()) return;
+  try {
+    await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+      body: JSON.stringify({ action: "send_custom", config_id: n.email_config_id || null, to, subject, body }),
+    });
+  } catch (e) { console.log("envio de e-mail falhou:", (e as any)?.message || e); }
+}
+
 // "vip_duplo" -> "Vip Duplo", "convite" -> "Convite" (tira _ e capitaliza cada palavra)
 function formatTipo(s: string): string {
   return (s || "").split(/[_\s]+/).filter(Boolean)
@@ -166,6 +183,10 @@ function varsDaMentoria(v: any): Record<string, string | number> {
     valor: (v.valor != null && v.valor !== "") ? v.valor : (dados.valor ?? dados.deal_value ?? ""),
     email: v.email || dados.email || "",
     status: v.status || "",
+    observacoes: v.observacoes || dados.observacoes || dados["Observações"] || dados["Observacoes"] || "",
+    cnpj: v.cnpj || dados.cnpj || dados.CNPJ || "",
+    dono_negocio: v.dono_negocio || dados.dono_negocio || dados["Dono do negócio"] || dados.deal_user || "",
+    data_fechamento: v.data_fechamento || dados.data_fechamento || dados["Data do fechamento"] || "",
     id_transacao: v.id_transacao || "",
     data: v.data_venda ? new Date(v.data_venda).toLocaleDateString("pt-BR") : new Date().toLocaleDateString("pt-BR"),
   };
@@ -497,6 +518,7 @@ Deno.serve(async (req) => {
             }
           }
           await enviarSheets(n, vars);
+          await enviarEmailNotif(n, vars);
         }
         return json({ success: true, enviados, erros });
       }
@@ -526,6 +548,7 @@ Deno.serve(async (req) => {
             }
           }
           await enviarSheets(n, vendaVars);
+          await enviarEmailNotif(n, vendaVars);
         }
         return json({ success: true, enviados });
       }
@@ -549,6 +572,7 @@ Deno.serve(async (req) => {
             }
           }
           await enviarSheets(n, vars);
+          await enviarEmailNotif(n, vars);
         }
         return json({ success: true, enviados });
       }
@@ -591,6 +615,7 @@ Deno.serve(async (req) => {
               }
             }
             await enviarSheets(n, vars);
+          await enviarEmailNotif(n, vars);
           }
         }
         return json({ success: true, enviados });

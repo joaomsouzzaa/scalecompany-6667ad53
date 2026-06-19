@@ -217,6 +217,17 @@ Deno.serve(async (req) => {
       (pick(["origem", "source", "fonte"], ["deal_origem", "origem", "source"]) as string | null) || null;
     const valor =
       (pick(["valor", "value", "amount", "deal_value"], ["deal_value", "value", "amount", "valor"]) as string | null) || null;
+    const observacoes =
+      (pick(["observ", "obs", "notes"], ["deal_observacoes", "observacoes", "notes"]) as string | null) || null;
+    const cnpj =
+      (pick(["cnpj"], ["deal_cnpj", "cnpj", "organization_cnpj"]) as string | null) || null;
+    const dono_negocio =
+      (pick(["dono", "responsav", "owner", "deal_user", "vendedor"], ["deal_user", "owner", "responsavel"]) as string | null) || null;
+    const data_fechamento_raw =
+      pick(["data_fechamento", "fechamento", "close", "won"], ["deal_data_fechamento", "close_date", "won_date"]);
+    const data_fechamento = data_fechamento_raw
+      ? new Date(parseDataVenda(data_fechamento_raw)).toLocaleDateString("pt-BR")
+      : null;
 
     // 4) Resolve o gatilho (produto + forma de pagamento).
     const { data: gatilhos } = await supabase
@@ -312,7 +323,7 @@ Deno.serve(async (req) => {
     //    Roda em segundo plano chamando a função `uazapi`.
     const notificarNovaVenda = async () => {
       try {
-        const venda = { id: vendaId, nome, telefone, produto, forma_pagamento, valor, origem, status, id_transacao, data_venda, dados };
+        const venda = { id: vendaId, nome, telefone, produto, forma_pagamento, valor, origem, observacoes, cnpj, dono_negocio, data_fechamento, status, id_transacao, data_venda, dados };
         await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/uazapi`, {
           method: "POST",
           headers: {

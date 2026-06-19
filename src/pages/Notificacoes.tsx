@@ -38,7 +38,7 @@ const GATILHOS: Record<string, { label: string; desc: string; vars: string[] }> 
   nova_venda_inside_sales: {
     label: "Nova venda Inside Sales",
     desc: "Dispara quando chega uma nova venda de mentoria (Inside Sales)",
-    vars: ["nome", "telefone", "produto", "forma_pagamento", "origem", "valor", "email", "status", "id_transacao", "data"],
+    vars: ["nome", "telefone", "produto", "forma_pagamento", "origem", "valor", "observacoes", "cnpj", "dono_negocio", "data_fechamento", "email", "status", "id_transacao", "data"],
   },
   resumo_cidade: {
     label: "Resumo de cidade (agendado)",
@@ -95,6 +95,11 @@ const emptyForm = {
   sheets_spreadsheet_nome: "" as string,
   sheets_aba: "" as string,
   sheets_mapa: {} as Record<string, string>,
+  email_ativo: false,
+  email_config_id: null as number | null,
+  email_para: "" as string,
+  email_assunto: "" as string,
+  email_corpo: "" as string,
 };
 
 export default function Notificacoes() {
@@ -137,6 +142,16 @@ export default function Notificacoes() {
     }
   };
 
+  // Contas de e-mail (para a opção de envio por e-mail). Carregadas via função `email`.
+  const [emailAccounts, setEmailAccounts] = useState<Array<{ id: number; nome: string; username: string; ativo?: boolean }>>([]);
+  const carregarContasEmail = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke("email", { body: { action: "list_accounts" } });
+      if (error || data?.error) return;
+      setEmailAccounts(data?.accounts || []);
+    } catch { /* silencioso */ }
+  }, []);
+
   // Sincroniza (em silêncio) o token do Meta para o servidor ao abrir a página
   useEffect(() => { syncMetaTokenToServer(); }, []);
 
@@ -173,6 +188,7 @@ export default function Notificacoes() {
     if (dialogOpen && isConnected && grupos.length === 0 && !loadingGrupos) {
       carregarGrupos();
     }
+    if (dialogOpen && emailAccounts.length === 0) carregarContasEmail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialogOpen]);
 
@@ -203,6 +219,11 @@ export default function Notificacoes() {
       sheets_spreadsheet_nome: (n as any).sheets_spreadsheet_nome || "",
       sheets_aba: (n as any).sheets_aba || "",
       sheets_mapa: (n as any).sheets_mapa || {},
+      email_ativo: (n as any).email_ativo || false,
+      email_config_id: (n as any).email_config_id ?? null,
+      email_para: (n as any).email_para || "",
+      email_assunto: (n as any).email_assunto || "",
+      email_corpo: (n as any).email_corpo || "",
     });
     setDialogOpen(true);
   };
@@ -227,7 +248,15 @@ export default function Notificacoes() {
       sheets_spreadsheet_nome: form.sheets_spreadsheet_nome || null,
       sheets_aba: form.sheets_aba || null,
       sheets_mapa: form.sheets_mapa || {},
+      email_ativo: form.email_ativo,
+      email_config_id: form.email_config_id,
+      email_para: form.email_para || null,
+      email_assunto: form.email_assunto || null,
+      email_corpo: form.email_corpo || null,
     };
+    if (form.email_ativo && (!form.email_para.trim() || !form.email_corpo.trim())) {
+      toast.error("E-mail ativo: preencha o destinatário e o corpo do e-mail"); return null;
+    }
     if (editingId) {
       const { error } = await (supabase as any).from("notificacoes").update(payload).eq("id", editingId);
       if (error) { toast.error("Erro ao salvar notificação"); return null; }
@@ -715,6 +744,73 @@ export default function Notificacoes() {
                       </Button>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+
+            {/* Envio por E-mail */}
+            <div className="md:col-span-2 rounded-md border p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Enviar também por e-mail</Label>
+                  <p className="text-xs text-muted-foreground">Dispara um e-mail (SMTP) a cada notificação, com título e corpo configuráveis.</p>
+                </div>
+                <Switch checked={form.email_ativo} onCheckedChange={(v) => {
+                  setForm({ ...form, email_ativo: v });
+                  if (v && emailAccounts.length === 0) carregarContasEmail();
+                }} />
+              </div>
+              {form.email_ativo && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs flex items-center gap-2">Conta de envio
+                        <button type="button" onClick={() => carregarContasEmail()} className="text-muted-foreground hover:text-foreground" title="Atualizar contas">
+                          <RefreshCw className="h-3 w-3" />
+                        </button>
+                      </Label>
+                      <Select
+                        value={form.email_config_id != null ? String(form.email_config_id) : ""}
+                        onValueChange={(v) => setForm({ ...form, email_config_id: v ? Number(v) : null })}
+                      >
+                        <SelectTrigger><SelectValue placeholder={emailAccounts.length ? "Selecione a conta" : "Nenhuma conta configurada"} /></SelectTrigger>
+                        <SelectContent>
+                          {emailAccounts.map((a) => (
+                            <SelectItem key={a.id} value={String(a.id)}>{a.nome}{a.ativo === false ? " · inativa" : ""}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-muted-foreground">A conta de e-mail (SMTP) é cadastrada no módulo de E-mail dos Eventos.</p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Para (destinatários)</Label>
+                      <Input value={form.email_para} onChange={(e) => setForm({ ...form, email_para: e.target.value })}
+                        placeholder="email@empresa.com, outro@empresa.com ou {{email}}" />
+                      <p className="text-[11px] text-muted-foreground">Vários separados por vírgula. Aceita variáveis (ex.: {"{{email}}"}).</p>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Título (assunto)</Label>
+                    <Input value={form.email_assunto} onChange={(e) => setForm({ ...form, email_assunto: e.target.value })}
+                      placeholder="Nova venda Inside Sales — {{nome}}" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Corpo do e-mail</Label>
+                    {gatilhoAtual?.vars.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-1">
+                        <span className="text-xs text-muted-foreground mr-1">Variáveis:</span>
+                        {gatilhoAtual.vars.map((v) => (
+                          <button key={v} type="button" onClick={() => setForm((f) => ({ ...f, email_corpo: f.email_corpo + `{{${v}}}` }))}
+                            className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-accent transition-colors">
+                            {`{{${v}}}`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <Textarea rows={6} value={form.email_corpo} onChange={(e) => setForm({ ...form, email_corpo: e.target.value })}
+                      placeholder={"Olá,\n\nNova venda registrada:\nCliente: {{nome}}\nProduto: {{produto}}\nValor: {{valor}}\nOrigem: {{origem}}"} />
+                    <p className="text-[11px] text-muted-foreground">Pode usar HTML. As mesmas variáveis da mensagem do WhatsApp valem aqui.</p>
+                  </div>
                 </div>
               )}
             </div>

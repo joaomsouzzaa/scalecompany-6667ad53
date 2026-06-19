@@ -450,7 +450,47 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
-    return json({ error: "ação inválida (use: test_connection, fetch_emails, regenerate_draft, send_reply)" }, 400);
+    // Lista as contas configuradas (sem expor a senha). Usado pela tela de Notificações.
+    if (action === "list_accounts") {
+      const { data } = await sb.from("email_config").select("id,nome,username,from_name,ativo").order("id");
+      const accounts = ((data || []) as any[]).map((c) => ({
+        id: c.id, nome: c.nome || c.username, username: c.username, from_name: c.from_name, ativo: c.ativo,
+      }));
+      return json({ ok: true, accounts });
+    }
+
+    // Envio avulso de e-mail (usado pelas Notificações). Assunto/corpo/destinatário
+    // já vêm renderizados. `to` pode ter vários endereços separados por vírgula.
+    if (action === "send_custom") {
+      const to = String(payload.to ?? "").split(/[,;]+/).map((s: string) => s.trim()).filter(Boolean);
+      const subject = String(payload.subject ?? "");
+      const body = String(payload.body ?? payload.html ?? payload.content ?? "");
+      if (!to.length) return json({ error: "destinatário (to) obrigatório" }, 400);
+      if (!subject && !body) return json({ error: "assunto ou corpo obrigatório" }, 400);
+      const cfg = payload.config_id
+        ? await getConfigById(sb, Number(payload.config_id))
+        : (await listActiveConfigs(sb))[0];
+      if (!cfg) return json({ error: "nenhuma conta de e-mail configurada" }, 400);
+      // Corpo: se já parece HTML, usa como veio; senão converte quebras de linha.
+      const isHtml = /<[a-z][\s\S]*>/i.test(body);
+      const html = isHtml ? body : body.replace(/\n/g, "<br>");
+      const content = isHtml ? body.replace(/<[^>]+>/g, " ") : body;
+      const smtp = await openSmtp(cfg);
+      try {
+        await smtp.send({
+          from: cfg.from_name ? `${cfg.from_name} <${cfg.username}>` : cfg.username,
+          to,
+          subject: subject || "(sem assunto)",
+          content: content || " ",
+          html,
+        });
+      } finally {
+        await smtp.close();
+      }
+      return json({ ok: true, enviados: to.length });
+    }
+
+    return json({ error: "ação inválida (use: test_connection, fetch_emails, regenerate_draft, send_reply, list_accounts, send_custom)" }, 400);
   } catch (e: any) {
     console.error("[email] erro:", e?.message || e);
     return json({ error: e?.message || String(e) }, 500);
