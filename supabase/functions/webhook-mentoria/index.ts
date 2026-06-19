@@ -213,6 +213,10 @@ Deno.serve(async (req) => {
         "approved_date", "created_at", "Purchase.AuthorizedDate",
       ]),
     );
+    const origem =
+      (pick(["origem", "source", "fonte"], ["deal_origem", "origem", "source"]) as string | null) || null;
+    const valor =
+      (pick(["valor", "value", "amount", "deal_value"], ["deal_value", "value", "amount", "valor"]) as string | null) || null;
 
     // 4) Resolve o gatilho (produto + forma de pagamento).
     const { data: gatilhos } = await supabase
@@ -308,7 +312,7 @@ Deno.serve(async (req) => {
     //    Roda em segundo plano chamando a função `uazapi`.
     const notificarNovaVenda = async () => {
       try {
-        const venda = { id: vendaId, nome, telefone, produto, forma_pagamento, status, id_transacao, data_venda, dados };
+        const venda = { id: vendaId, nome, telefone, produto, forma_pagamento, valor, origem, status, id_transacao, data_venda, dados };
         await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/uazapi`, {
           method: "POST",
           headers: {

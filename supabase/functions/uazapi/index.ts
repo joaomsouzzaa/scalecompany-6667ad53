@@ -162,6 +162,7 @@ function varsDaMentoria(v: any): Record<string, string | number> {
     telefone: v.telefone || "",
     produto: v.produto || "",
     forma_pagamento: v.forma_pagamento || "",
+    origem: v.origem || dados.origem || dados.Origem || "",
     valor: (v.valor != null && v.valor !== "") ? v.valor : (dados.valor ?? dados.deal_value ?? ""),
     email: v.email || dados.email || "",
     status: v.status || "",
