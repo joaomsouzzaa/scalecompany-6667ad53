@@ -49,12 +49,28 @@ function norm(s: unknown): string {
     .toLowerCase();
 }
 
-// UAZAPI: envia texto pela instância da Cobrança.
-async function enviarTexto(cfg: any, destinatario: string, mensagem: string) {
-  const base = (cfg?.server_url || "").replace(/\/$/, "");
-  // Usa o token DA INSTÂNCIA (cai pro admin_token se ainda não houver).
-  const token = cfg?.instance_token || cfg?.admin_token;
-  if (!base || !token) throw new Error("Configuração UAZAPI (Cobrança) incompleta");
+// Resolve { base, token } para enviar via UAZAPI usando o POOL compartilhado
+// (uazapi_instancias): pega a 1ª instância CONECTADA com token. Cai pro token da
+// config singleton (legado) só se o pool não tiver nenhuma conectada.
+// A base vem do secret UAZAPI_SERVER_URL, senão da config.
+async function resolverEnvio(supabase: any, cfg: any): Promise<{ base: string; token: string }> {
+  const base = (Deno.env.get("UAZAPI_SERVER_URL") || cfg?.server_url || "").replace(/\/$/, "");
+  const { data: inst } = await supabase
+    .from("uazapi_instancias")
+    .select("instance_token,status")
+    .in("status", ["connected", "conectado"])
+    .not("instance_token", "is", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const token = inst?.instance_token || cfg?.instance_token || cfg?.admin_token || "";
+  return { base, token };
+}
+
+// UAZAPI: envia texto. Base/token já resolvidos pelo pool em resolverEnvio.
+async function enviarTexto(base: string, token: string, destinatario: string, mensagem: string) {
+  base = (base || "").replace(/\/$/, "");
+  if (!base || !token) throw new Error("Nenhuma instância UAZAPI conectada — conecte uma instância na tela de Cobrança");
   const tel = String(destinatario || "").replace(/\D/g, "");
   if (!tel) throw new Error("Telefone do comprador ausente");
   const res = await fetch(`${base}/send/text`, {
@@ -262,7 +278,8 @@ Deno.serve(async (req) => {
             .from("cobranca_whatsapp_config")
             .select("*")
             .maybeSingle();
-          await enviarTexto(cfg, String(telefone), render(gatilho.mensagem, varsMsg));
+          const { base, token } = await resolverEnvio(supabase, cfg);
+          await enviarTexto(base, token, String(telefone), render(gatilho.mensagem, varsMsg));
           mensagem_enviada = true;
         } catch (e) {
           mensagem_status = `erro: ${e instanceof Error ? e.message : String(e)}`;
