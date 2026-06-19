@@ -6,6 +6,11 @@ name: Deploy edge functions (novo Supabase)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/**"
+      - "supabase/config.toml"
 
 jobs:
   deploy:
