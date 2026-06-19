@@ -97,9 +97,28 @@ const emptyForm = {
   sheets_mapa: {} as Record<string, string>,
   email_ativo: false,
   email_config_id: null as number | null,
-  email_para: "" as string,
+  email_destinatarios: [""] as string[],
   email_assunto: "" as string,
   email_corpo: "" as string,
+};
+
+// Junta a lista de destinatários de e-mail num texto (vírgula), removendo vazios.
+const emailParaJoin = (arr: string[]) => (arr || []).map((s) => s.trim()).filter(Boolean).join(", ");
+
+// Valores de exemplo p/ renderizar o e-mail de teste (cobre todas as variáveis).
+const EXEMPLO_VARS: Record<string, string> = {
+  nome: "Fulano (teste)", email: "fulano@email.com", telefone: "5511999999999", documento: "000.000.000-00",
+  produto: "Mentoria Scale", cidade: "São Paulo", valor: "R$ 5.000,00", tipo: "Individual",
+  status: "Pagamento aprovado", quantidade: "1", forma_pagamento: "Pix", data: new Date().toLocaleDateString("pt-BR"),
+  origem: "Instagram", observacoes: "Cliente quer começar em julho", cnpj: "12.345.678/0001-90",
+  dono_negocio: "joao@empresa.com", data_fechamento: new Date().toLocaleDateString("pt-BR"), id_transacao: "TESTE-123",
+};
+const renderExemplo = (tpl: string) =>
+  String(tpl || "").replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => EXEMPLO_VARS[k] ?? "");
+
+const CONTA_VAZIA = {
+  nome: "", imap_host: "", imap_port: 993, smtp_host: "", smtp_port: 465,
+  username: "", password: "", from_name: "",
 };
 
 export default function Notificacoes() {
@@ -151,6 +170,68 @@ export default function Notificacoes() {
       setEmailAccounts(data?.accounts || []);
     } catch { /* silencioso */ }
   }, []);
+
+  // Destinatários de e-mail (lista dinâmica)
+  const addEmailDest = () => setForm((f) => ({ ...f, email_destinatarios: [...f.email_destinatarios, ""] }));
+  const removeEmailDest = (i: number) => setForm((f) => ({ ...f, email_destinatarios: f.email_destinatarios.filter((_, idx) => idx !== i) }));
+  const updateEmailDest = (i: number, v: string) => setForm((f) => ({ ...f, email_destinatarios: f.email_destinatarios.map((d, idx) => (idx === i ? v : d)) }));
+
+  // Envia um e-mail de TESTE (só e-mail), renderizando o template com valores de exemplo.
+  const [testandoEmail, setTestandoEmail] = useState(false);
+  const enviarEmailTeste = async () => {
+    const to = emailParaJoin(form.email_destinatarios);
+    if (!to) { toast.error("Informe ao menos um destinatário de e-mail"); return; }
+    if (!form.email_corpo.trim()) { toast.error("Preencha o corpo do e-mail"); return; }
+    setTestandoEmail(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("email", {
+        body: {
+          action: "send_custom",
+          config_id: form.email_config_id || null,
+          to,
+          subject: (renderExemplo(form.email_assunto) || "Teste de notificação") + " (teste)",
+          body: renderExemplo(form.email_corpo),
+        },
+      });
+      if (error || data?.error) throw new Error(data?.error || error?.message);
+      toast.success("E-mail de teste enviado");
+    } catch (e: any) {
+      toast.error(e?.message || "Falha ao enviar e-mail de teste");
+    } finally {
+      setTestandoEmail(false);
+    }
+  };
+
+  // ---- Nova conta de e-mail (cadastro inline) ----
+  const [contaModalOpen, setContaModalOpen] = useState(false);
+  const [contaForm, setContaForm] = useState({ ...CONTA_VAZIA });
+  const [salvandoConta, setSalvandoConta] = useState(false);
+  const salvarNovaConta = async () => {
+    if (!contaForm.username || !contaForm.password || !contaForm.smtp_host) {
+      toast.error("Preencha ao menos usuário, senha e servidor SMTP"); return;
+    }
+    setSalvandoConta(true);
+    try {
+      const dados: any = {
+        nome: contaForm.nome || contaForm.username,
+        imap_host: contaForm.imap_host || contaForm.smtp_host, imap_port: Number(contaForm.imap_port) || 993,
+        smtp_host: contaForm.smtp_host, smtp_port: Number(contaForm.smtp_port) || 465,
+        username: contaForm.username, password: contaForm.password, from_name: contaForm.from_name, ativo: true,
+      };
+      const { data, error } = await (supabase as any).from("email_config").insert(dados).select("id").maybeSingle();
+      if (error) throw new Error(error.message);
+      await carregarContasEmail();
+      const novoId = data?.id ?? null;
+      if (novoId) setForm((f) => ({ ...f, email_config_id: Number(novoId) }));
+      toast.success("Conta de e-mail adicionada");
+      setContaModalOpen(false);
+      setContaForm({ ...CONTA_VAZIA });
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao salvar conta");
+    } finally {
+      setSalvandoConta(false);
+    }
+  };
 
   // Sincroniza (em silêncio) o token do Meta para o servidor ao abrir a página
   useEffect(() => { syncMetaTokenToServer(); }, []);
@@ -221,7 +302,10 @@ export default function Notificacoes() {
       sheets_mapa: (n as any).sheets_mapa || {},
       email_ativo: (n as any).email_ativo || false,
       email_config_id: (n as any).email_config_id ?? null,
-      email_para: (n as any).email_para || "",
+      email_destinatarios: (() => {
+        const lista = String((n as any).email_para || "").split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+        return lista.length ? lista : [""];
+      })(),
       email_assunto: (n as any).email_assunto || "",
       email_corpo: (n as any).email_corpo || "",
     });
@@ -250,12 +334,12 @@ export default function Notificacoes() {
       sheets_mapa: form.sheets_mapa || {},
       email_ativo: form.email_ativo,
       email_config_id: form.email_config_id,
-      email_para: form.email_para || null,
+      email_para: emailParaJoin(form.email_destinatarios) || null,
       email_assunto: form.email_assunto || null,
       email_corpo: form.email_corpo || null,
     };
-    if (form.email_ativo && (!form.email_para.trim() || !form.email_corpo.trim())) {
-      toast.error("E-mail ativo: preencha o destinatário e o corpo do e-mail"); return null;
+    if (form.email_ativo && (!emailParaJoin(form.email_destinatarios) || !form.email_corpo.trim())) {
+      toast.error("E-mail ativo: preencha ao menos um destinatário e o corpo do e-mail"); return null;
     }
     if (editingId) {
       const { error } = await (supabase as any).from("notificacoes").update(payload).eq("id", editingId);
@@ -768,6 +852,9 @@ export default function Notificacoes() {
                         <button type="button" onClick={() => carregarContasEmail()} className="text-muted-foreground hover:text-foreground" title="Atualizar contas">
                           <RefreshCw className="h-3 w-3" />
                         </button>
+                        <button type="button" onClick={() => { setContaForm({ ...CONTA_VAZIA }); setContaModalOpen(true); }} className="ml-auto text-primary hover:underline text-[11px] flex items-center gap-1">
+                          <Plus className="h-3 w-3" /> Nova conta
+                        </button>
                       </Label>
                       <Select
                         value={form.email_config_id != null ? String(form.email_config_id) : ""}
@@ -784,9 +871,20 @@ export default function Notificacoes() {
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Para (destinatários)</Label>
-                      <Input value={form.email_para} onChange={(e) => setForm({ ...form, email_para: e.target.value })}
-                        placeholder="email@empresa.com, outro@empresa.com ou {{email}}" />
-                      <p className="text-[11px] text-muted-foreground">Vários separados por vírgula. Aceita variáveis (ex.: {"{{email}}"}).</p>
+                      {form.email_destinatarios.map((d, i) => (
+                        <div key={i} className="flex gap-2 items-center">
+                          <Input value={d} onChange={(e) => updateEmailDest(i, e.target.value)}
+                            placeholder="email@empresa.com ou {{email}}" />
+                          <Button type="button" variant="ghost" size="icon" className="shrink-0 text-destructive"
+                            onClick={() => removeEmailDest(i)} disabled={form.email_destinatarios.length === 1}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button type="button" variant="outline" size="sm" onClick={addEmailDest}>
+                        <Plus className="mr-2 h-4 w-4" /> Adicionar e-mail
+                      </Button>
+                      <p className="text-[11px] text-muted-foreground">Um por linha. Aceita variáveis (ex.: {"{{email}}"} envia ao comprador).</p>
                     </div>
                   </div>
                   <div className="space-y-1">
@@ -811,6 +909,10 @@ export default function Notificacoes() {
                       placeholder={"Olá,\n\nNova venda registrada:\nCliente: {{nome}}\nProduto: {{produto}}\nValor: {{valor}}\nOrigem: {{origem}}"} />
                     <p className="text-[11px] text-muted-foreground">Pode usar HTML. As mesmas variáveis da mensagem do WhatsApp valem aqui.</p>
                   </div>
+                  <Button variant="outline" size="sm" onClick={enviarEmailTeste} disabled={testandoEmail}>
+                    {testandoEmail ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                    {testandoEmail ? "Enviando..." : "Enviar e-mail de teste"}
+                  </Button>
                 </div>
               )}
             </div>
@@ -830,6 +932,61 @@ export default function Notificacoes() {
               {testando ? "Enviando..." : "Salvar e testar"}
             </Button>
             <Button onClick={salvarEFechar}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Nova conta de e-mail (cadastro inline) */}
+      <Dialog open={contaModalOpen} onOpenChange={setContaModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Nova conta de e-mail</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Nome (apelido)</Label>
+              <Input value={contaForm.nome} onChange={(e) => setContaForm({ ...contaForm, nome: e.target.value })} placeholder="Ex: Comercial" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">E-mail (usuário)</Label>
+                <Input value={contaForm.username} onChange={(e) => setContaForm({ ...contaForm, username: e.target.value })} placeholder="vendas@seudominio.com.br" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Senha</Label>
+                <Input type="password" value={contaForm.password} onChange={(e) => setContaForm({ ...contaForm, password: e.target.value })} placeholder="senha do e-mail" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Nome de exibição (De)</Label>
+              <Input value={contaForm.from_name} onChange={(e) => setContaForm({ ...contaForm, from_name: e.target.value })} placeholder="Equipe Scale" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Servidor SMTP (envio)</Label>
+                <Input value={contaForm.smtp_host} onChange={(e) => setContaForm({ ...contaForm, smtp_host: e.target.value })} placeholder="mail.seudominio.com.br" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Porta SMTP</Label>
+                <Input type="number" value={contaForm.smtp_port} onChange={(e) => setContaForm({ ...contaForm, smtp_port: Number(e.target.value) || 465 })} placeholder="465" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Servidor IMAP (opcional)</Label>
+                <Input value={contaForm.imap_host} onChange={(e) => setContaForm({ ...contaForm, imap_host: e.target.value })} placeholder="igual ao SMTP se vazio" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Porta IMAP</Label>
+                <Input type="number" value={contaForm.imap_port} onChange={(e) => setContaForm({ ...contaForm, imap_port: Number(e.target.value) || 993 })} placeholder="993" />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Para só enviar (notificações) basta SMTP. O IMAP é usado pelo módulo de E-mail dos Eventos.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setContaModalOpen(false)}>Cancelar</Button>
+            <Button onClick={salvarNovaConta} disabled={salvandoConta}>
+              {salvandoConta ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              {salvandoConta ? "Salvando..." : "Adicionar conta"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
