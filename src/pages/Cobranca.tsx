@@ -305,6 +305,41 @@ export default function Cobranca() {
   const [disparoId, setDisparoId] = useState<string | null>(null);
   const [progresso, setProgresso] = useState<{ total: number; enviados: number; erros: number; status: string } | null>(null);
 
+  // ---- Histórico de disparos + log de itens ----
+  type DisparoHist = { id: string; status: string; total: number; enviados: number; erros: number; instancia: string | null; created_at: string };
+  type LogItem = { id: string; nome: string | null; telefone: string; categoria: string | null; status: string; mensagem: string; enviado_em: string | null; erro: string | null };
+  const [historico, setHistorico] = useState<DisparoHist[]>([]);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logDisparo, setLogDisparo] = useState<DisparoHist | null>(null);
+  const [logItens, setLogItens] = useState<LogItem[]>([]);
+  const [logCarregando, setLogCarregando] = useState(false);
+
+  const carregarHistorico = useCallback(async () => {
+    const { data } = await (supabase as any)
+      .from("cobranca_disparos")
+      .select("id,status,total,enviados,erros,instancia,created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    setHistorico((data || []) as DisparoHist[]);
+  }, []);
+  useEffect(() => { carregarHistorico(); }, [carregarHistorico]);
+
+  const abrirLog = async (d: DisparoHist) => {
+    setLogDisparo(d);
+    setLogOpen(true);
+    setLogCarregando(true);
+    try {
+      const { data } = await (supabase as any)
+        .from("cobranca_disparo_itens")
+        .select("id,nome,telefone,categoria,status,mensagem,enviado_em,erro")
+        .eq("disparo_id", d.id)
+        .order("created_at", { ascending: true });
+      setLogItens((data || []) as LogItem[]);
+    } finally {
+      setLogCarregando(false);
+    }
+  };
+
   const comecar = async () => {
     if (!instanciaSel) { toast.error("Selecione a instância de envio"); return; }
     if (!conectadas.some((i) => i.nome === instanciaSel)) { toast.error("A instância selecionada não está conectada"); return; }
@@ -321,7 +356,8 @@ export default function Cobranca() {
       setDisparoId(data.disparo_id);
       setProgresso({ total: data.total, enviados: 0, erros: 0, status: "enviando" });
       setConferOpen(false);
-      toast.success(`Lote criado: ${data.total} mensagem(ns). Envio no servidor (~1 a cada 20s).`);
+      carregarHistorico();
+      toast.success(`Lote criado: ${data.total} mensagem(ns). Envio no servidor (~1 a cada 30s).`);
     } catch (e: any) {
       toast.error(e?.message || "Falha ao iniciar o disparo");
     } finally {
@@ -329,12 +365,31 @@ export default function Cobranca() {
     }
   };
 
+  // Ao abrir a página, retoma o acompanhamento de qualquer disparo em andamento
+  // (o envio roda no servidor, então a barra precisa aparecer mesmo após recarregar).
+  useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("cobranca_disparos")
+        .select("id,total,enviados,erros,status")
+        .eq("status", "enviando")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) {
+        setDisparoId(data.id);
+        setProgresso({ total: data.total, enviados: data.enviados, erros: data.erros, status: data.status });
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     if (!disparoId) return;
     const tick = async () => {
       const { data } = await (supabase as any).from("cobranca_disparos").select("total,enviados,erros,status").eq("id", disparoId).maybeSingle();
       if (data) {
         setProgresso({ total: data.total, enviados: data.enviados, erros: data.erros, status: data.status });
+        carregarHistorico();
         if (data.status === "concluido") { toast.success("Disparo concluído!"); setDisparoId(null); }
       }
     };
@@ -428,7 +483,7 @@ export default function Cobranca() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2"><Send className="h-4 w-4 text-primary" /> Disparo em andamento<Badge variant="secondary" className="ml-2">{progresso.status}</Badge></CardTitle>
-                  <CardDescription>O envio roda no servidor (~1 mensagem a cada 20s). Pode fechar esta aba — não interrompe.</CardDescription>
+                  <CardDescription>O envio roda no servidor (~1 mensagem a cada 30s). Pode fechar esta aba — não interrompe.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <Progress value={progresso.total ? (progresso.enviados / progresso.total) * 100 : 0} />
@@ -482,9 +537,105 @@ export default function Cobranca() {
                 <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onCsvFile(f); e.target.value = ""; }} />
               </CardHeader>
             </Card>
+
+            {/* Histórico de disparos / log de envios */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Histórico de disparos</CardTitle>
+                  <CardDescription>Cada importação que virou disparo. Abra o log para ver o status de cada mensagem (enviada/erro).</CardDescription>
+                </div>
+                <Button size="sm" variant="outline" onClick={carregarHistorico}>Atualizar</Button>
+              </CardHeader>
+              <CardContent>
+                {historico.length === 0 ? (
+                  <p className="py-6 text-center text-muted-foreground text-sm">Nenhum disparo realizado ainda.</p>
+                ) : (
+                  <div className="max-h-[50vh] overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Quando</TableHead>
+                          <TableHead>Instância</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Enviadas</TableHead>
+                          <TableHead className="text-right">Erros</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                          <TableHead></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {historico.map((d) => (
+                          <TableRow key={d.id}>
+                            <TableCell className="whitespace-nowrap text-xs">{new Date(d.created_at).toLocaleString("pt-BR")}</TableCell>
+                            <TableCell className="text-xs">{d.instancia || "—"}</TableCell>
+                            <TableCell>
+                              <Badge variant={d.status === "concluido" ? "default" : d.status === "enviando" ? "secondary" : "outline"}>{d.status}</Badge>
+                            </TableCell>
+                            <TableCell className="text-right text-xs">{d.enviados}</TableCell>
+                            <TableCell className={`text-right text-xs ${d.erros ? "text-destructive font-medium" : ""}`}>{d.erros}</TableCell>
+                            <TableCell className="text-right text-xs">{d.total}</TableCell>
+                            <TableCell className="text-right"><Button size="sm" variant="ghost" onClick={() => abrirLog(d)}>Ver log</Button></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </main>
       </div>
+
+      {/* Dialog: log de envios de um disparo */}
+      <Dialog open={logOpen} onOpenChange={setLogOpen}>
+        <DialogContent className="max-w-5xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>
+              Log do disparo {logDisparo ? `· ${new Date(logDisparo.created_at).toLocaleString("pt-BR")}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {logCarregando ? (
+            <p className="py-10 text-center text-muted-foreground">Carregando itens...</p>
+          ) : logItens.length === 0 ? (
+            <p className="py-10 text-center text-muted-foreground">Nenhum item neste disparo.</p>
+          ) : (
+            <div className="max-h-[60vh] overflow-auto min-w-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Telefone</TableHead>
+                    <TableHead>Categoria</TableHead>
+                    <TableHead>Enviada em</TableHead>
+                    <TableHead>Mensagem / erro</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {logItens.map((it) => (
+                    <TableRow key={it.id}>
+                      <TableCell>
+                        <Badge variant={it.status === "enviado" ? "default" : it.status === "erro" ? "destructive" : "secondary"}>{it.status}</Badge>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">{it.nome || "—"}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">{it.telefone}</TableCell>
+                      <TableCell className="text-xs">{it.categoria === "dia_vencimento" ? "Vencimento" : "Inadimplente"}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">{it.enviado_em ? new Date(it.enviado_em).toLocaleString("pt-BR") : "—"}</TableCell>
+                      <TableCell className="text-xs max-w-[320px]">
+                        {it.status === "erro" && it.erro
+                          ? <span className="text-destructive" title={it.erro}>{it.erro.slice(0, 120)}</span>
+                          : <span className="text-muted-foreground" title={it.mensagem}>{it.mensagem.slice(0, 80)}{it.mensagem.length > 80 ? "…" : ""}</span>}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog: mensagem */}
       <Dialog open={msgDialog} onOpenChange={setMsgDialog}>
