@@ -341,7 +341,7 @@ export default function Cobranca() {
     const toggleTodos = () => set((rs) => rs.map((r) => (selValido(r) ? { ...r, _sel: !todos } : r)));
     if (!rows.length) return <p className="py-8 text-center text-sm text-muted-foreground">Nenhuma linha nesta seção.</p>;
     return (
-      <div className="max-h-[55vh] overflow-auto">
+      <div className="max-h-[55vh] overflow-auto min-w-0">
         <Table>
           <TableHeader>
             <TableRow>
@@ -530,14 +530,14 @@ export default function Cobranca() {
 
       {/* Dialog: espelhos */}
       <Dialog open={espelhoOpen} onOpenChange={setEspelhoOpen}>
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="max-w-6xl overflow-hidden">
           <DialogHeader><DialogTitle>Espelho da importação</DialogTitle></DialogHeader>
           {carregandoEspelho ? (
             <p className="py-10 text-center text-muted-foreground">Casando clientes e montando espelhos...</p>
           ) : (
             <>
               {avisoImport && <p className="text-xs text-amber-600 flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> {avisoImport}</p>}
-              <Tabs defaultValue="receber">
+              <Tabs defaultValue="receber" className="min-w-0">
                 <TabsList>
                   <TabsTrigger value="receber">A Receber (hoje) · {rowsReceber.length}</TabsTrigger>
                   <TabsTrigger value="inad">Inadimplentes · {rowsInad.length}</TabsTrigger>
@@ -557,9 +557,9 @@ export default function Cobranca() {
 
       {/* Dialog: conferência final */}
       <Dialog open={conferOpen} onOpenChange={setConferOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-4xl overflow-hidden">
           <DialogHeader><DialogTitle>Conferência ({itensConfer.length} envio(s))</DialogTitle></DialogHeader>
-          <div className="max-h-[55vh] overflow-auto">
+          <div className="max-h-[55vh] overflow-auto min-w-0">
             <Table>
               <TableHeader><TableRow><TableHead>Tipo</TableHead><TableHead>Cliente</TableHead><TableHead>Telefone</TableHead><TableHead>Mensagem</TableHead></TableRow></TableHeader>
               <TableBody>
