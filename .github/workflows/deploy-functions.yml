@@ -1,0 +1,30 @@
+name: Deploy edge functions (novo Supabase)
+
+# Dispara em Actions -> "Deploy edge functions" -> Run workflow.
+# Requer o secret SUPABASE_ACCESS_TOKEN no repo (Personal Access Token do Supabase).
+# O project_id em supabase/config.toml já aponta para o projeto novo.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ocbmwwulvpexcixywcdj
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Supabase CLI
+        run: |
+          curl -fsSL https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz -o sb.tgz
+          tar -xzf sb.tgz
+          sudo mv supabase /usr/local/bin/
+          supabase --version
+
+      - name: Deploy de todas as functions
+        run: |
+          supabase functions deploy --project-ref "$PROJECT_REF"
+          echo "== functions no projeto =="
+          supabase functions list --project-ref "$PROJECT_REF"
