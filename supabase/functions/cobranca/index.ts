@@ -51,6 +51,14 @@ function render(template: string, vars: Record<string, string | number>): string
   return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : ""));
 }
 
+// Saudação conforme o horário de São Paulo (resolvida no momento do envio).
+function saudacaoSP(): string {
+  const h = Number(new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", hour12: false, timeZone: "America/Sao_Paulo" }).slice(0, 2));
+  if (h >= 5 && h < 12) return "Bom dia";
+  if (h >= 12 && h < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
 // Normaliza telefone para a chave de identidade (só dígitos).
 function normTelefone(s: string): string {
   return (s || "").replace(/\D/g, "");
@@ -237,7 +245,10 @@ Deno.serve(async (req) => {
           const telefone = match?.telefone || "";
           const vars: Record<string, string | number> = {
             nome: l.cliente || "", valor: l.valor || "", data: l.data || "",
-            vencimento: l.data || "", categoria: l.categoria || "", observacao: l.observacao || "",
+            vencimento: l.data || "", categoria: l.categoria || "", produto: l.categoria || "",
+            observacao: l.observacao || "",
+            // Preserva o token: a saudação é resolvida no envio (horário real de SP).
+            saudacao: "{{saudacao}}",
           };
           const base = {
             cliente: l.cliente, categoria_lancamento: l.categoria || "", valor: l.valor || "", data: l.data || "",
@@ -344,11 +355,13 @@ Deno.serve(async (req) => {
 
         try {
           const { base, token } = await tokenDe(supabase, cfg, disparo.instancia);
-          await enviarTexto(base, token, item.telefone, item.mensagem);
+          // Resolve a saudação agora (horário de SP do disparo), sem afetar outros tokens.
+          const textoFinal = String(item.mensagem).replace(/\{\{\s*saudacao\s*\}\}/gi, saudacaoSP());
+          await enviarTexto(base, token, item.telefone, textoFinal);
           const agora = new Date().toISOString();
           await supabase.from("cobranca_disparo_itens").update({ status: "enviado", enviado_em: agora }).eq("id", item.id);
           // Só a cadência de inadimplência avança a ordem; 'dia_vencimento' só registra o último envio.
-          const patchContato: Record<string, unknown> = { ultima_mensagem: item.mensagem, ultima_enviada_em: agora, updated_at: agora };
+          const patchContato: Record<string, unknown> = { ultima_mensagem: textoFinal, ultima_enviada_em: agora, updated_at: agora };
           if (item.categoria === "inadimplente" && item.ordem != null) patchContato.ultima_ordem_enviada = item.ordem;
           await supabase.from("cobranca_contatos").update(patchContato).eq("telefone", item.telefone);
           await supabase.from("cobranca_disparos").update({ enviados: (disparo.enviados || 0) + 1, updated_at: new Date().toISOString() }).eq("id", disparo.id);

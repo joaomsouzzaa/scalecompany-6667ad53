@@ -82,6 +82,15 @@ function usDateToISO(d: string): string {
 }
 const normTelefone = (s: string) => (s || "").replace(/\D/g, "");
 
+// Saudação atual no horário de SP — só para PRÉVIA. No envio real é resolvida no backend.
+function saudacaoSPAgora(): string {
+  const h = Number(new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", hour12: false, timeZone: "America/Sao_Paulo" }).slice(0, 2));
+  if (h >= 5 && h < 12) return "Bom dia";
+  if (h >= 12 && h < 18) return "Boa tarde";
+  return "Boa noite";
+}
+const previewMsg = (m: string | null | undefined) => (m || "").replace(/\{\{\s*saudacao\s*\}\}/gi, saudacaoSPAgora());
+
 type RawReceber = { categoria_lancamento: string; cliente: string; valor: string; data: string };
 type RawInad = { categoria_lancamento: string; cliente: string; data: string; valor: string; observacao: string };
 
@@ -381,9 +390,9 @@ export default function Cobranca() {
                 )}
                 <TableCell className="text-xs max-w-[280px]">
                   {r.tem_mensagem
-                    ? <span title={r.mensagem || ""}>
+                    ? <span title={previewMsg(r.mensagem)}>
                         {tipo === "inadimplente" && r.proxima_ordem ? <Badge variant="outline" className="mr-1">#{r.proxima_ordem}</Badge> : null}
-                        {(r.mensagem || "").slice(0, 60)}{(r.mensagem || "").length > 60 ? "…" : ""}
+                        {previewMsg(r.mensagem).slice(0, 60)}{previewMsg(r.mensagem).length > 60 ? "…" : ""}
                       </span>
                     : <span className="text-amber-600">sem mensagem nessa categoria</span>}
                 </TableCell>
@@ -505,7 +514,7 @@ export default function Cobranca() {
               <Label>Mensagem</Label>
               <Textarea ref={msgTextRef} rows={5} value={msgForm.mensagem} onChange={(e) => setMsgForm((f) => ({ ...f, mensagem: e.target.value }))} />
               <div className="flex flex-wrap gap-1 pt-1">
-                {["nome", "valor", "vencimento", "data"].map((v) => (
+                {["nome", "produto", "valor", "vencimento", "data", "saudacao"].map((v) => (
                   <Button key={v} type="button" variant="secondary" size="sm" className="h-6 text-[11px]" onClick={() => inserirVar(v)}>{`{{${v}}}`}</Button>
                 ))}
               </div>
@@ -568,7 +577,7 @@ export default function Cobranca() {
                     <TableCell><Badge variant={r._tipo === "receber" ? "default" : "secondary"}>{r._tipo === "receber" ? "Vencimento" : `Inad. #${r.proxima_ordem || ""}`}</Badge></TableCell>
                     <TableCell className="whitespace-nowrap">{r.cliente}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs">{normTelefone(r._tel)}</TableCell>
-                    <TableCell className="text-xs max-w-[360px]"><span title={r.mensagem || ""}>{(r.mensagem || "").slice(0, 80)}{(r.mensagem || "").length > 80 ? "…" : ""}</span></TableCell>
+                    <TableCell className="text-xs max-w-[360px]"><span title={previewMsg(r.mensagem)}>{previewMsg(r.mensagem).slice(0, 80)}{previewMsg(r.mensagem).length > 80 ? "…" : ""}</span></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
