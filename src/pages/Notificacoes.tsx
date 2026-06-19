@@ -35,6 +35,11 @@ const GATILHOS: Record<string, { label: string; desc: string; vars: string[] }> 
     desc: "Dispara quando uma venda é registrada",
     vars: ["nome", "email", "telefone", "documento", "produto", "cidade", "valor", "tipo", "status", "quantidade", "forma_pagamento", "data"],
   },
+  nova_venda_inside_sales: {
+    label: "Nova venda Inside Sales",
+    desc: "Dispara quando chega uma nova venda de mentoria (Inside Sales)",
+    vars: ["nome", "telefone", "produto", "forma_pagamento", "valor", "email", "status", "id_transacao", "data"],
+  },
   resumo_cidade: {
     label: "Resumo de cidade (agendado)",
     desc: "Resumo periódico de uma cidade",

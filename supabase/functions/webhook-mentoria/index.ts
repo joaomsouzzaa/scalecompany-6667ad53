@@ -303,6 +303,36 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 7) Notificação interna de NOVA VENDA (gatilho "nova_venda_inside_sales" em
+    //    Notificações). Dispara para TODA venda, independente do gatilho do comprador.
+    //    Roda em segundo plano chamando a função `uazapi`.
+    const notificarNovaVenda = async () => {
+      try {
+        const venda = { id: vendaId, nome, telefone, produto, forma_pagamento, status, id_transacao, data_venda, dados };
+        await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/uazapi`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          },
+          body: JSON.stringify({ action: "nova_venda_inside_sales", venda }),
+        });
+      } catch (e) {
+        console.log("notificarNovaVenda falhou:", (e as any)?.message || e);
+      }
+    };
+    try {
+      // @ts-ignore — EdgeRuntime existe no runtime do Supabase
+      if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(notificarNovaVenda());
+      } else {
+        notificarNovaVenda();
+      }
+    } catch {
+      notificarNovaVenda();
+    }
+
     return new Response(
       JSON.stringify({ ok: true, id: vendaId, mensagem_status: status_inicial }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },

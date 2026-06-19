@@ -152,6 +152,24 @@ function varsDaVenda(v: any): Record<string, string | number> {
   };
 }
 
+// Variáveis de uma venda de Inside Sales / Mentoria (tabela mentoria_vendas).
+// Espalha também os campos mapeados (dados) para templates avançados.
+function varsDaMentoria(v: any): Record<string, string | number> {
+  const dados = (v && typeof v.dados === "object" && v.dados) ? v.dados : {};
+  return {
+    ...dados,
+    nome: v.nome || "",
+    telefone: v.telefone || "",
+    produto: v.produto || "",
+    forma_pagamento: v.forma_pagamento || "",
+    valor: (v.valor != null && v.valor !== "") ? v.valor : (dados.valor ?? dados.deal_value ?? ""),
+    email: v.email || dados.email || "",
+    status: v.status || "",
+    id_transacao: v.id_transacao || "",
+    data: v.data_venda ? new Date(v.data_venda).toLocaleDateString("pt-BR") : new Date().toLocaleDateString("pt-BR"),
+  };
+}
+
 // ---- Meta Ads (server-side, usa token salvo no banco) ----
 function slugVariants(slug: string): string[] {
   return (slug || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -507,6 +525,29 @@ Deno.serve(async (req) => {
             }
           }
           await enviarSheets(n, vendaVars);
+        }
+        return json({ success: true, enviados });
+      }
+      case "nova_venda_inside_sales": {
+        // Chamado pela função webhook-mentoria quando chega uma venda de Inside Sales.
+        const v = payload.venda;
+        if (!v) return json({ error: "venda ausente" }, 400);
+        const { data: notifs } = await supabase.from("notificacoes").select("*").eq("ativo", true).eq("gatilho", "nova_venda_inside_sales");
+        const vars = varsDaMentoria(v);
+        let enviados = 0;
+        for (const n of notifs || []) {
+          const { base: baseT, token: tokenT } = await tokenDe(supabase, cfg, n.instancia);
+          const msg = render(n.mensagem, vars);
+          for (const dest of destinatariosDe(n)) {
+            try {
+              await enviarTexto(baseT, tokenT, dest, msg);
+              await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "enviado", cidade: null });
+              enviados++;
+            } catch (e) {
+              await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: dest, mensagem: msg, status: "erro", erro: String(e), cidade: null });
+            }
+          }
+          await enviarSheets(n, vars);
         }
         return json({ success: true, enviados });
       }
