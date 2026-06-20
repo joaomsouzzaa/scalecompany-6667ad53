@@ -307,3 +307,36 @@ main { min-width: 0; }
 .tv-mode.tv-2x1 .tv-col-kpis .kpi-icon-wrap svg { height: 1.2rem; width: 1.2rem; }
 
 
+/* ===== Modo TV da página "Meta do Mês" =====
+   16:9 (1 TV): métricas em cima + velocímetro/evolução embaixo, preenchendo a tela.
+   2:1 (2 TVs): TV1 = métricas grandes · TV2 = gráficos grandes. */
+.meta-tv { height: 100vh; overflow: hidden; display: flex; flex-direction: column; background: hsl(var(--background)); }
+.meta-tv .meta-tv-body { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 2rem; padding: 2.5rem 4rem; }
+
+/* --- 16:9 --- */
+.meta-tv .meta-tv-metrics-row { flex: 0 0 auto; }
+.meta-tv .meta-tv-charts-row { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; }
+.meta-tv .meta-tv-charts-row > * { min-width: 0; min-height: 0; }
+
+/* --- 2:1 (duas telas lado a lado) --- */
+.meta-tv.meta-tv-2x1 .meta-tv-body { display: grid; grid-template-columns: 1fr 1fr; gap: 3.5rem; }
+.meta-tv.meta-tv-2x1 .meta-tv-col { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.meta-tv.meta-tv-2x1 .meta-tv-metrics { justify-content: center; }
+/* Métricas (TV1) ocupando a tela: grid 2x2 que estica em altura */
+.meta-tv.meta-tv-2x1 .meta-tv-metrics > .grid { height: 100%; align-content: stretch; gap: 2.5rem; }
+.meta-tv.meta-tv-2x1 .meta-tv-metrics .kpi-card { display: flex; flex-direction: column; justify-content: center; }
+/* Gráficos (TV2): velocímetro grande em cima, barras embaixo */
+.meta-tv.meta-tv-2x1 .meta-tv-charts { gap: 2rem; }
+.meta-tv .meta-tv-gauge { flex: 1 1 0; min-height: 0; }
+.meta-tv .meta-tv-bars,
+.meta-tv .meta-tv-evo { flex: 1 1 0; min-height: 0; }
+
+/* Métricas enormes no Modo TV (vale p/ 16:9 e 2:1) */
+.meta-tv .kpi-card { padding: 1.5rem 2rem; }
+.meta-tv .kpi-card .kpi-title { font-size: clamp(1rem, 1.5vw, 2rem); line-height: 1.15; }
+.meta-tv .kpi-card .kpi-value { font-size: clamp(2.25rem, 4.5vw, 6rem); line-height: 1.02; white-space: nowrap; }
+.meta-tv .kpi-card .kpi-icon-wrap { height: 3.25rem; width: 3.25rem; }
+.meta-tv .kpi-card .kpi-icon-wrap svg { height: 1.6rem; width: 1.6rem; }
+.meta-tv header { padding-top: 1.1rem; padding-bottom: 1.1rem; }
+
+

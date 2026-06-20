@@ -1,14 +1,20 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { KpiCard } from "@/components/KpiCard";
-import { Target, DollarSign, TrendingUp, Percent, RefreshCw, Loader2 } from "lucide-react";
+import { Target, DollarSign, TrendingUp, Percent, RefreshCw, Loader2, Users, Tv } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -36,9 +42,101 @@ interface Config {
 }
 interface Snapshot { faturado: number; meta: number; captado_em: string; }
 
+// ===== Gráficos (reutilizados na tela normal e no Modo TV) =====
+function Gauge({ pct, cor, tv }: { pct: number; cor: string; tv?: boolean }) {
+  const data = [{ name: "faturado", value: Math.min(pct, 100), fill: cor }];
+  return (
+    <div className={`relative ${tv ? "h-full min-h-0" : "h-[240px]"}`}>
+      <ResponsiveContainer width="100%" height="100%">
+        <RadialBarChart innerRadius="70%" outerRadius="100%" data={data} startAngle={180} endAngle={0}>
+          <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+          <RadialBar background dataKey="value" cornerRadius={12} />
+        </RadialBarChart>
+      </ResponsiveContainer>
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none -mt-[6%]">
+        <span className="font-bold leading-none" style={{ color: cor, fontSize: tv ? "clamp(3rem, 9vw, 9rem)" : "2.25rem" }}>
+          {pct.toFixed(0)}%
+        </span>
+        <span className="text-muted-foreground" style={{ fontSize: tv ? "clamp(1rem, 2vw, 2rem)" : "0.75rem" }}>da meta</span>
+      </div>
+    </div>
+  );
+}
+
+function Evolution({ data, tv }: { data: { label: string; faturado: number; meta: number }[]; tv?: boolean }) {
+  return (
+    <div className={tv ? "h-full min-h-0" : "h-[240px]"}>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data}>
+          <defs>
+            <linearGradient id="gFat" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={VERDE} stopOpacity={0.5} />
+              <stop offset="100%" stopColor={VERDE} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+          <XAxis dataKey="label" tick={{ fontSize: tv ? 13 : 10 }} hide={data.length > 12} />
+          <YAxis tick={{ fontSize: tv ? 13 : 10 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+          <Tooltip formatter={(v: any) => fmtBRL(Number(v))} />
+          <Area type="monotone" dataKey="meta" stroke={ROSA} strokeDasharray="4 4" fill="none" />
+          <Area type="monotone" dataKey="faturado" stroke={VERDE} fill="url(#gFat)" strokeWidth={tv ? 3 : 2} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function Bars({ faturado, meta, tv }: { faturado: number; meta: number; tv?: boolean }) {
+  const barData = [
+    { name: "Meta", value: meta, fill: ROSA },
+    { name: "Faturado", value: faturado, fill: VERDE },
+  ];
+  return (
+    <div className={tv ? "h-full min-h-0" : "h-[220px]"}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={barData} layout="vertical" margin={{ left: 20, right: 60 }}>
+          <CartesianGrid strokeDasharray="3 3" opacity={0.15} horizontal={false} />
+          <XAxis type="number" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} tick={{ fontSize: tv ? 14 : 11 }} />
+          <YAxis type="category" dataKey="name" tick={{ fontSize: tv ? 16 : 12 }} width={tv ? 120 : 80} />
+          <Tooltip formatter={(v: any) => fmtBRL(Number(v))} />
+          <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+            {barData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+            <LabelList dataKey="value" position="right" formatter={(v: any) => fmtBRL(Number(v))} style={{ fontSize: tv ? 16 : 11, fontWeight: 700 }} />
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function ProgressBig({ pct, faturado, meta, falta, tv }: { pct: number; faturado: number; meta: number; falta: number; tv?: boolean }) {
+  return (
+    <div className="space-y-3 py-6">
+      <div className="flex justify-between" style={{ fontSize: tv ? "clamp(1rem,1.8vw,1.8rem)" : "0.875rem" }}>
+        <span className="text-muted-foreground">Faturado <strong className="text-foreground">{fmtBRL(faturado)}</strong></span>
+        <span className="text-muted-foreground">Meta <strong className="text-foreground">{fmtBRL(meta)}</strong></span>
+      </div>
+      <div className={`relative w-full rounded-full bg-muted overflow-hidden ${tv ? "h-16" : "h-8"}`}>
+        <div className="h-full rounded-full transition-all"
+          style={{ width: `${Math.min(pct, 100)}%`, background: `linear-gradient(90deg, ${AZUL}, ${VERDE})` }} />
+        <span className="absolute inset-0 flex items-center justify-center font-bold" style={{ fontSize: tv ? "clamp(1.2rem,2.5vw,2.5rem)" : "0.875rem" }}>
+          {pct.toFixed(1)}%
+        </span>
+      </div>
+      <p className="text-muted-foreground text-center" style={{ fontSize: tv ? "clamp(0.9rem,1.5vw,1.5rem)" : "0.75rem" }}>
+        Falta {fmtBRL(falta)} para a meta
+      </p>
+    </div>
+  );
+}
+
 export default function MetaDoMes() {
   const qc = useQueryClient();
   const [syncing, setSyncing] = useState(false);
+  const [grupoOpen, setGrupoOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [tvMode, setTvMode] = useState(false);
+  const [tvLayout, setTvLayout] = useState<"16:9" | "2:1">("16:9");
 
   const { data: config } = useQuery({
     queryKey: ["meta-faturado-config"],
@@ -65,10 +163,9 @@ export default function MetaDoMes() {
     refetchInterval: 60_000,
   });
 
-  // Grupos da instância (para escolher qual seguir).
   const { data: grupos = [] } = useQuery({
     queryKey: ["meta-faturado-grupos", config?.instancia],
-    enabled: !!config,
+    enabled: !!config && grupoOpen,
     queryFn: async (): Promise<{ id: string; name: string }[]> => {
       const { data, error } = await supabase.functions.invoke("uazapi", {
         body: { action: "meta_grupos", instancia: config?.instancia },
@@ -82,6 +179,7 @@ export default function MetaDoMes() {
   const meta = config?.meta ?? 0;
   const falta = Math.max(meta - faturado, 0);
   const pct = meta > 0 ? (faturado / meta) * 100 : 0;
+  const corGauge = corMeta(pct);
 
   const atualizadoTxt = useMemo(() => {
     if (!config?.atualizado_em) return "ainda não sincronizado";
@@ -97,6 +195,23 @@ export default function MetaDoMes() {
     })),
     [snapshots],
   );
+
+  // Modo TV: fecha a sidebar e entra/sai de fullscreen.
+  useEffect(() => { setSidebarOpen(!tvMode); }, [tvMode]);
+  useEffect(() => {
+    const onFs = () => { if (!document.fullscreenElement) setTvMode(false); };
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+  const entrarTv = async (layout: "16:9" | "2:1") => {
+    setTvLayout(layout);
+    try { await document.documentElement.requestFullscreen(); } catch {}
+    setTvMode(true);
+  };
+  const sairTv = async () => {
+    if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch {} }
+    setTvMode(false);
+  };
 
   async function sincronizar() {
     setSyncing(true);
@@ -121,165 +236,150 @@ export default function MetaDoMes() {
       .update({ grupo_id: g?.id, grupo_nome: g?.name }).eq("id", config.id);
     if (error) { toast.error(error.message); return; }
     toast.success("Grupo atualizado — sincronizando…");
+    setGrupoOpen(false);
     qc.invalidateQueries({ queryKey: ["meta-faturado-config"] });
     sincronizar();
   }
 
-  const corGauge = corMeta(pct);
-  const gaugeData = [{ name: "faturado", value: Math.min(pct, 100), fill: corGauge }];
-  const barData = [
-    { name: "Meta", value: meta, fill: ROSA },
-    { name: "Faturado", value: faturado, fill: VERDE },
-  ];
+  // Blocos reutilizáveis ------------------------------------------------------
+  const kpisBlock = (
+    <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+      <KpiCard title="Faturado" value={fmtBRL(faturado)} icon={DollarSign} iconColor="bg-[#39ff14]/10 text-[#39ff14]" />
+      <KpiCard title="Meta" value={fmtBRL(meta)} icon={Target} iconColor="bg-[#ff2d75]/10 text-[#ff2d75]" />
+      <KpiCard title="Falta" value={fmtBRL(falta)} icon={TrendingUp} iconColor="bg-[#00d4ff]/10 text-[#00d4ff]" />
+      <KpiCard title="Atingido" value={`${pct.toFixed(1)}%`} icon={Percent} />
+    </div>
+  );
 
   return (
-    <SidebarProvider>
+    <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
       <div className="min-h-screen flex w-full">
         <AppSidebar />
-        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
-          <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
+        <main className={tvMode ? `flex-1 meta-tv ${tvLayout === "2:1" ? "meta-tv-2x1" : ""}` : "flex-1 min-w-0 overflow-y-auto overflow-x-hidden"}>
+          <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-3">
             <SidebarTrigger />
             <div className="flex-1">
               <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
                 <Target className="h-5 w-5 text-primary" /> Meta do Mês
               </h1>
-              <p className="text-sm text-muted-foreground">
-                Faturado vs Meta — lido do nome do grupo no WhatsApp ({atualizadoTxt})
-              </p>
+              {!tvMode && (
+                <p className="text-sm text-muted-foreground">
+                  Faturado vs Meta — lido do nome do grupo no WhatsApp ({atualizadoTxt})
+                </p>
+              )}
             </div>
-            <Button onClick={sincronizar} disabled={syncing} size="sm">
-              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Atualizar agora
-            </Button>
+
+            {tvMode ? (
+              <Button variant="default" size="sm" onClick={sairTv} className="gap-2">
+                <Tv className="h-4 w-4" /> Sair do Modo TV
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setGrupoOpen(true)} className="gap-2">
+                  <Users className="h-4 w-4" /> Grupo
+                </Button>
+                <Button onClick={sincronizar} disabled={syncing} size="sm" className="gap-2">
+                  {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Atualizar agora
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Tv className="h-4 w-4" /> Modo TV
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => entrarTv("16:9")}>📺 16:9 (1 TV)</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => entrarTv("2:1")}>🖥️ 2:1 (2 TVs lado a lado)</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            )}
           </header>
 
-          <div className="p-6 space-y-6 max-w-6xl">
-            {/* KPIs */}
-            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-              <KpiCard title="Faturado" value={fmtBRL(faturado)} icon={DollarSign}
-                iconColor="bg-[#39ff14]/10 text-[#39ff14]" />
-              <KpiCard title="Meta" value={fmtBRL(meta)} icon={Target}
-                iconColor="bg-[#ff2d75]/10 text-[#ff2d75]" />
-              <KpiCard title="Falta" value={fmtBRL(falta)} icon={TrendingUp}
-                iconColor="bg-[#00d4ff]/10 text-[#00d4ff]" />
-              <KpiCard title="Atingido" value={`${pct.toFixed(1)}%`} icon={Percent} />
+          {/* ===================== MODO TV ===================== */}
+          {tvMode ? (
+            <div className="meta-tv-body">
+              {tvLayout === "2:1" ? (
+                <>
+                  {/* TV 1 — métricas grandes */}
+                  <div className="meta-tv-col meta-tv-metrics">
+                    {kpisBlock}
+                  </div>
+                  {/* TV 2 — gráficos grandes */}
+                  <div className="meta-tv-col meta-tv-charts">
+                    <div className="meta-tv-gauge"><Gauge pct={pct} cor={corGauge} tv /></div>
+                    <div className="meta-tv-bars"><Bars faturado={faturado} meta={meta} tv /></div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* 16:9 — tudo em uma tela */}
+                  <div className="meta-tv-metrics-row">{kpisBlock}</div>
+                  <div className="meta-tv-charts-row">
+                    <div className="meta-tv-gauge"><Gauge pct={pct} cor={corGauge} tv /></div>
+                    <div className="meta-tv-evo"><Evolution data={histData} tv /></div>
+                  </div>
+                </>
+              )}
             </div>
+          ) : (
+            /* ===================== TELA NORMAL ===================== */
+            <div className="p-6 space-y-6 max-w-6xl">
+              {kpisBlock}
 
-            {/* Config do grupo */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Grupo monitorado</CardTitle>
-                <CardDescription>
-                  Instância <strong>{config?.instancia || "—"}</strong> · seguindo{" "}
-                  <strong>{config?.grupo_nome || "—"}</strong>. O nome deve conter
-                  {" "}<code>(faturado/meta)</code>, ex.: Scale Company (847.250/2.705.000).
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="max-w-md space-y-1">
-                  <Label className="text-xs">Trocar grupo</Label>
-                  <Select value={config?.grupo_id || ""} onValueChange={escolherGrupo}>
-                    <SelectTrigger><SelectValue placeholder="Selecione o grupo…" /></SelectTrigger>
-                    <SelectContent>
-                      {grupos.map((g) => (
-                        <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* ===== 3 OPÇÕES DE GRÁFICO (escolher uma e remover as outras) ===== */}
-
-            {/* Opção 1 — Velocímetro + evolução do mês */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Opção 1 — Velocímetro + evolução do mês</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-6 md:grid-cols-2">
-                  <div className="relative h-[240px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RadialBarChart innerRadius="70%" outerRadius="100%" data={gaugeData}
-                        startAngle={180} endAngle={0}>
-                        <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-                        <RadialBar background dataKey="value" cornerRadius={12} />
-                      </RadialBarChart>
-                    </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none -mt-6">
-                      <span className="text-4xl font-bold" style={{ color: corGauge }}>{pct.toFixed(0)}%</span>
-                      <span className="text-xs text-muted-foreground">da meta</span>
-                    </div>
+              {/* Opção 1 — Velocímetro + evolução do mês */}
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-base">Opção 1 — Velocímetro + evolução do mês</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <Gauge pct={pct} cor={corGauge} />
+                    <Evolution data={histData} />
                   </div>
-                  <div className="h-[240px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={histData}>
-                        <defs>
-                          <linearGradient id="gFat" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={VERDE} stopOpacity={0.5} />
-                            <stop offset="100%" stopColor={VERDE} stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                        <XAxis dataKey="label" tick={{ fontSize: 10 }} hide={histData.length > 12} />
-                        <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-                        <Tooltip formatter={(v: any) => fmtBRL(Number(v))} />
-                        <Area type="monotone" dataKey="meta" stroke={ROSA} strokeDasharray="4 4" fill="none" />
-                        <Area type="monotone" dataKey="faturado" stroke={VERDE} fill="url(#gFat)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            {/* Opção 2 — Barra de progresso grande */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Opção 2 — Barra de progresso</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 py-6">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Faturado <strong className="text-foreground">{fmtBRL(faturado)}</strong></span>
-                  <span className="text-muted-foreground">Meta <strong className="text-foreground">{fmtBRL(meta)}</strong></span>
-                </div>
-                <div className="relative h-8 w-full rounded-full bg-muted overflow-hidden">
-                  <div className="h-full rounded-full transition-all"
-                    style={{ width: `${Math.min(pct, 100)}%`, background: `linear-gradient(90deg, ${AZUL}, ${VERDE})` }} />
-                  <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">
-                    {pct.toFixed(1)}%
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground text-center">Falta {fmtBRL(falta)} para a meta</p>
-              </CardContent>
-            </Card>
+              {/* Opção 2 — Barra de progresso */}
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-base">Opção 2 — Barra de progresso</CardTitle></CardHeader>
+                <CardContent><ProgressBig pct={pct} faturado={faturado} meta={meta} falta={falta} /></CardContent>
+              </Card>
 
-            {/* Opção 3 — Barras comparativas */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Opção 3 — Barras Meta x Faturado</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[220px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={barData} layout="vertical" margin={{ left: 20, right: 40 }}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.15} horizontal={false} />
-                      <XAxis type="number" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={80} />
-                      <Tooltip formatter={(v: any) => fmtBRL(Number(v))} />
-                      <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                        {barData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-                        <LabelList dataKey="value" position="right" formatter={(v: any) => fmtBRL(Number(v))} style={{ fontSize: 11 }} />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+              {/* Opção 3 — Barras comparativas */}
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-base">Opção 3 — Barras Meta x Faturado</CardTitle></CardHeader>
+                <CardContent><Bars faturado={faturado} meta={meta} /></CardContent>
+              </Card>
+            </div>
+          )}
         </main>
       </div>
+
+      {/* Popup de seleção de grupo */}
+      <Dialog open={grupoOpen} onOpenChange={setGrupoOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Grupo monitorado</DialogTitle>
+            <DialogDescription>
+              Instância <strong>{config?.instancia || "—"}</strong> · seguindo{" "}
+              <strong>{config?.grupo_nome || "—"}</strong>. O nome do grupo deve conter{" "}
+              <code>(faturado/meta)</code>, ex.: Scale Company (847.250/2.705.000).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1">
+            <Label className="text-xs">Trocar grupo</Label>
+            <Select value={config?.grupo_id || ""} onValueChange={escolherGrupo}>
+              <SelectTrigger><SelectValue placeholder="Selecione o grupo…" /></SelectTrigger>
+              <SelectContent>
+                {grupos.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground pt-1">Ao trocar, sincronizamos automaticamente.</p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </SidebarProvider>
   );
 }
