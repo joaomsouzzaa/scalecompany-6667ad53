@@ -21,6 +21,11 @@ import {
 const VERDE = "#39ff14";
 const ROSA = "#ff2d75";
 const AZUL = "#00d4ff";
+const VERMELHO = "#ff3b30";
+const AMARELO = "#faff00";
+
+// Cor do velocímetro conforme o atingimento: <50% vermelho, 50-80% amarelo, >=80% azul.
+const corMeta = (pct: number) => (pct >= 80 ? AZUL : pct >= 50 ? AMARELO : VERMELHO);
 
 const fmtBRL = (n: number) =>
   `R$ ${(Number(n) || 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
@@ -120,7 +125,8 @@ export default function MetaDoMes() {
     sincronizar();
   }
 
-  const gaugeData = [{ name: "faturado", value: Math.min(pct, 100), fill: VERDE }];
+  const corGauge = corMeta(pct);
+  const gaugeData = [{ name: "faturado", value: Math.min(pct, 100), fill: corGauge }];
   const barData = [
     { name: "Meta", value: meta, fill: ROSA },
     { name: "Faturado", value: faturado, fill: VERDE },
@@ -202,7 +208,7 @@ export default function MetaDoMes() {
                       </RadialBarChart>
                     </ResponsiveContainer>
                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none -mt-6">
-                      <span className="text-4xl font-bold" style={{ color: VERDE }}>{pct.toFixed(0)}%</span>
+                      <span className="text-4xl font-bold" style={{ color: corGauge }}>{pct.toFixed(0)}%</span>
                       <span className="text-xs text-muted-foreground">da meta</span>
                     </div>
                   </div>
