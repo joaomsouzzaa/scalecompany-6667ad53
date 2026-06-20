@@ -141,9 +141,19 @@ async function destinatariosRelatorio(supabase: any): Promise<{ numeros: string[
 async function enviarRelatorio(supabase: any, mensagem: string) {
   const diag: { enviados: number; erros: string[]; destinatarios: number } = { enviados: 0, erros: [], destinatarios: 0 };
   const { data: cfg } = await supabase.from("whatsapp_config").select("server_url,admin_token,status").maybeSingle();
-  if (!cfg?.server_url || !cfg?.admin_token) { diag.erros.push("whatsapp_config incompleto"); return diag; }
+  if (!cfg?.server_url) { diag.erros.push("whatsapp_config incompleto"); return diag; }
   const base = String(cfg.server_url).replace(/\/$/, "");
-  const token = cfg.admin_token;
+  // O endpoint /send/text exige o TOKEN DA INSTÂNCIA (não o admin_token, que é só
+  // p/ administrar instâncias e dá 401 ao enviar). Mesma lógica do `tokenDe` da
+  // função uazapi: 1ª instância conectada com instance_token; fallback admin_token.
+  const { data: inst } = await supabase.from("uazapi_instancias")
+    .select("instance_token")
+    .not("instance_token", "is", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const token = inst?.instance_token || cfg.admin_token;
+  if (!token) { diag.erros.push("sem token de instância UAZAPI"); return diag; }
 
   const { numeros, cabecalho, notificacao_id } = await destinatariosRelatorio(supabase);
   diag.destinatarios = numeros.length;
