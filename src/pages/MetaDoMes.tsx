@@ -20,8 +20,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   RadialBarChart, RadialBar, PolarAngleAxis,
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, LabelList,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer,
 } from "recharts";
 
 const VERDE = "#39ff14";
@@ -82,50 +82,6 @@ function Evolution({ data, tv }: { data: { label: string; faturado: number; meta
           <Area type="monotone" dataKey="faturado" stroke={VERDE} fill="url(#gFat)" strokeWidth={tv ? 3 : 2} />
         </AreaChart>
       </ResponsiveContainer>
-    </div>
-  );
-}
-
-function Bars({ faturado, meta, tv }: { faturado: number; meta: number; tv?: boolean }) {
-  const barData = [
-    { name: "Meta", value: meta, fill: ROSA },
-    { name: "Faturado", value: faturado, fill: VERDE },
-  ];
-  return (
-    <div className={tv ? "h-full min-h-0" : "h-[220px]"}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={barData} layout="vertical" margin={{ left: 20, right: 60 }}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.15} horizontal={false} />
-          <XAxis type="number" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} tick={{ fontSize: tv ? 14 : 11 }} />
-          <YAxis type="category" dataKey="name" tick={{ fontSize: tv ? 16 : 12 }} width={tv ? 120 : 80} />
-          <Tooltip formatter={(v: any) => fmtBRL(Number(v))} />
-          <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-            {barData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-            <LabelList dataKey="value" position="right" formatter={(v: any) => fmtBRL(Number(v))} style={{ fontSize: tv ? 16 : 11, fontWeight: 700 }} />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-function ProgressBig({ pct, faturado, meta, falta, tv }: { pct: number; faturado: number; meta: number; falta: number; tv?: boolean }) {
-  return (
-    <div className="space-y-3 py-6">
-      <div className="flex justify-between" style={{ fontSize: tv ? "clamp(1rem,1.8vw,1.8rem)" : "0.875rem" }}>
-        <span className="text-muted-foreground">Faturado <strong className="text-foreground">{fmtBRL(faturado)}</strong></span>
-        <span className="text-muted-foreground">Meta <strong className="text-foreground">{fmtBRL(meta)}</strong></span>
-      </div>
-      <div className={`relative w-full rounded-full bg-muted overflow-hidden ${tv ? "h-16" : "h-8"}`}>
-        <div className="h-full rounded-full transition-all"
-          style={{ width: `${Math.min(pct, 100)}%`, background: `linear-gradient(90deg, ${AZUL}, ${VERDE})` }} />
-        <span className="absolute inset-0 flex items-center justify-center font-bold" style={{ fontSize: tv ? "clamp(1.2rem,2.5vw,2.5rem)" : "0.875rem" }}>
-          {pct.toFixed(1)}%
-        </span>
-      </div>
-      <p className="text-muted-foreground text-center" style={{ fontSize: tv ? "clamp(0.9rem,1.5vw,1.5rem)" : "0.75rem" }}>
-        Falta {fmtBRL(falta)} para a meta
-      </p>
     </div>
   );
 }
@@ -309,7 +265,7 @@ export default function MetaDoMes() {
                   {/* TV 2 — gráficos grandes */}
                   <div className="meta-tv-col meta-tv-charts">
                     <div className="meta-tv-gauge"><Gauge pct={pct} cor={corGauge} tv /></div>
-                    <div className="meta-tv-bars"><Bars faturado={faturado} meta={meta} tv /></div>
+                    <div className="meta-tv-evo"><Evolution data={histData} tv /></div>
                   </div>
                 </>
               ) : (
@@ -328,27 +284,15 @@ export default function MetaDoMes() {
             <div className="p-6 space-y-6 max-w-6xl">
               {kpisBlock}
 
-              {/* Opção 1 — Velocímetro + evolução do mês */}
+              {/* Velocímetro + evolução do mês */}
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-base">Opção 1 — Velocímetro + evolução do mês</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-base">Velocímetro + evolução do mês</CardTitle></CardHeader>
                 <CardContent>
                   <div className="grid gap-6 md:grid-cols-2">
                     <Gauge pct={pct} cor={corGauge} />
                     <Evolution data={histData} />
                   </div>
                 </CardContent>
-              </Card>
-
-              {/* Opção 2 — Barra de progresso */}
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-base">Opção 2 — Barra de progresso</CardTitle></CardHeader>
-                <CardContent><ProgressBig pct={pct} faturado={faturado} meta={meta} falta={falta} /></CardContent>
-              </Card>
-
-              {/* Opção 3 — Barras comparativas */}
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-base">Opção 3 — Barras Meta x Faturado</CardTitle></CardHeader>
-                <CardContent><Bars faturado={faturado} meta={meta} /></CardContent>
               </Card>
             </div>
           )}
