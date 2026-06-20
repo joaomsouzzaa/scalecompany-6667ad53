@@ -50,7 +50,8 @@ function Gauge({ pct, cor, tv, fill }: { pct: number; cor: string; tv?: boolean;
       <ResponsiveContainer width="100%" height="100%">
         <RadialBarChart innerRadius="70%" outerRadius="100%" data={data} startAngle={180} endAngle={0}>
           <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-          <RadialBar background dataKey="value" cornerRadius={12} />
+          {/* Trilho (parte não atingida) em tom suave da própria cor: mostra "até onde dá pra chegar" sem chamar atenção */}
+          <RadialBar background={{ fill: cor, fillOpacity: 0.12 }} dataKey="value" cornerRadius={12} />
         </RadialBarChart>
       </ResponsiveContainer>
       {/* Texto na abertura do semicírculo (parte de baixo), sem cobrir o arco */}
