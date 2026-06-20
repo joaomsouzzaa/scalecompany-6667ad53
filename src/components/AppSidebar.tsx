@@ -47,6 +47,7 @@ const eventosItems = [
   { title: "Resumo City", url: "/eventos-geral", icon: LayoutDashboard },
   { title: "Vendas", url: "/vendas-eventos", icon: ShoppingCart },
   { title: "Ingressos Emitidos", url: "/ingressos-emitidos", icon: Ticket },
+  { title: "Recuperação de Vendas", url: "/recuperacao-vendas", icon: ShoppingCart },
   { title: "Upgrade de Lote", url: "/upgrade-lote", icon: ArrowUpCircle },
   { title: "E-mail", url: "/email", icon: Mail },
 ];

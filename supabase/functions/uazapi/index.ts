@@ -192,6 +192,48 @@ function varsDaMentoria(v: any): Record<string, string | number> {
   };
 }
 
+// Variáveis de um lead de recuperação (tabela recuperacao_leads).
+function varsDoLead(l: any): Record<string, string | number> {
+  return {
+    nome: l.nome || "",
+    email: l.email || "",
+    telefone: l.telefone || "",
+    produto: l.produto || "",
+    cidade: l.cidade || "",
+    valor: fmtBRL(l.valor || 0),
+    tipo: formatTipo(l.tipo_ingresso || ""),
+    quantidade: 1,
+    data: l.data_venda ? new Date(l.data_venda).toLocaleDateString("pt-BR") : "",
+  };
+}
+
+// Hora (0-23) no fuso de São Paulo de um instante.
+function horaSP(d: Date): number {
+  return Number(d.toLocaleString("en-US", { hour: "2-digit", hour12: false, timeZone: "America/Sao_Paulo" }).slice(0, 2)) % 24;
+}
+// Quiet hours: nunca enviar entre 22h e 7h (SP). Se `alvo` cair nessa janela,
+// joga para as 07:00 (SP) do próximo período válido.
+function proximoHorarioValido(alvo: Date): Date {
+  const d = new Date(alvo);
+  // Itera no máximo ~3 vezes (segurança) até cair fora da janela [22h, 7h).
+  for (let i = 0; i < 4; i++) {
+    const h = horaSP(d);
+    if (h >= 7 && h < 22) return d;
+    // Calcula quantas horas faltam até as 07:00 SP do próximo dia válido.
+    const horasAte7 = h >= 22 ? (24 - h + 7) : (7 - h);
+    d.setTime(d.getTime() + horasAte7 * 3600_000);
+    // Zera para 07:00 cravado (minutos): ajusta minutos/segundos via diferença SP.
+    const min = Number(d.toLocaleString("en-US", { minute: "2-digit", timeZone: "America/Sao_Paulo" }));
+    d.setTime(d.getTime() - min * 60_000);
+  }
+  return d;
+}
+// Delay de um passo em milissegundos.
+function delayMs(valor: number, unidade: string): number {
+  const v = Number(valor) || 0;
+  return unidade === "minutos" ? v * 60_000 : v * 3600_000;
+}
+
 // ---- Meta Ads (server-side, usa token salvo no banco) ----
 function slugVariants(slug: string): string[] {
   return (slug || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -390,7 +432,7 @@ async function slugsDaNotif(supabase: any, n: any): Promise<(string | null)[]> {
 
 // Lista de conjuntos de variáveis: 1 por cidade ativa (resumo) ou 1 (venda/geral)
 async function buildVarsList(supabase: any, n: any): Promise<Record<string, string | number>[]> {
-  if (n.gatilho === "nova_venda") {
+  if (n.gatilho === "nova_venda" || n.gatilho === "compra_realizada" || n.gatilho === "recuperacao_venda") {
     return [varsDaVenda({ nome_comprador: "Fulano (teste)", produto: "Workshop Scale | Belém - PA", cidade: "Belém", valor: 247, tipo_ingresso: "individual", quantidade: 1, metodo_pagamento: "pix", data_venda: new Date().toISOString() })];
   }
   if (n.gatilho === "resumo_geral") {
@@ -502,10 +544,18 @@ Deno.serve(async (req) => {
         const { base: baseT, token: tokenT } = await tokenDe(supabase, cfg, n.instancia);
         // 1 mensagem por cidade ativa (quando "todas") — enviadas separadamente
         const varsList = await buildVarsList(supabase, n);
+        // No fluxo de recuperação a mensagem vem do 1º passo (recuperacao_mensagens).
+        let templateTest = n.mensagem;
+        if (n.gatilho === "recuperacao_venda") {
+          const { data: passo } = await supabase.from("recuperacao_mensagens")
+            .select("mensagem").eq("notificacao_id", n.id).eq("ativo", true)
+            .order("ordem", { ascending: true }).limit(1).maybeSingle();
+          templateTest = passo?.mensagem || "(fluxo sem mensagens cadastradas)";
+        }
         let enviados = 0;
         const erros: string[] = [];
         for (const vars of varsList) {
-          const msg = render(n.mensagem, vars) + "\n\n_(mensagem de teste)_";
+          const msg = render(templateTest, vars) + "\n\n_(mensagem de teste)_";
           for (const dest of ds) {
             try {
               await enviarTexto(baseT, tokenT, dest, msg);
@@ -616,6 +666,109 @@ Deno.serve(async (req) => {
             }
             await enviarSheets(n, vars);
           await enviarEmailNotif(n, vars);
+          }
+        }
+        return json({ success: true, enviados });
+      }
+      case "compra_realizada": {
+        // Chamado pela função webhook-vendas quando uma venda é APROVADA.
+        // Parabeniza o comprador no WhatsApp dele e grava o status na venda.
+        const v = payload.venda;
+        if (!v) return json({ error: "venda ausente" }, 400);
+        const { data: notifs } = await supabase.from("notificacoes").select("*").eq("ativo", true).eq("gatilho", "compra_realizada");
+        const norm = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s-]/g, "");
+        const telefone = v.telefone_comprador || v.telefone || "";
+        let enviados = 0; let status = "erro"; let ultimoErro: string | null = null;
+        for (const n of notifs || []) {
+          if (n.cidade_slug) {
+            const parts = n.cidade_slug.split(",").map((p: string) => norm(p)).filter(Boolean);
+            const match = parts.some((s: string) => norm(v.cidade || "").includes(s) || norm(v.produto || "").includes(s));
+            if (!match) continue;
+          }
+          if (!telefone) { ultimoErro = "venda sem telefone do comprador"; continue; }
+          const { base: baseT, token: tokenT } = await tokenDe(supabase, cfg, n.instancia);
+          const vendaVars = varsDaVenda(v);
+          const msg = render(n.mensagem, vendaVars);
+          try {
+            await enviarTexto(baseT, tokenT, telefone, msg);
+            await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: telefone, mensagem: msg, status: "enviado", cidade: v.cidade || null });
+            enviados++; status = "enviada"; ultimoErro = null;
+          } catch (e) {
+            ultimoErro = e instanceof Error ? e.message : String(e);
+            await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: telefone, mensagem: msg, status: "erro", erro: ultimoErro, cidade: v.cidade || null });
+          }
+          await enviarSheets(n, vendaVars);
+          await enviarEmailNotif(n, vendaVars);
+        }
+        // Atualiza o status do envio na venda (se identificável).
+        if (v.id) {
+          await supabase.from("vendas").update({
+            msg_compra_status: status, msg_compra_erro: status === "enviada" ? null : ultimoErro, msg_compra_em: new Date().toISOString(),
+          }).eq("id", v.id);
+        }
+        return json({ success: true, enviados });
+      }
+      case "recuperacao_processar": {
+        // Cron (a cada minuto): processa o fluxo de recuperação dos leads cujo
+        // proximo_envio_em já passou e respeitando a janela 7h–22h.
+        const agora = new Date();
+        if (horaSP(agora) < 7 || horaSP(agora) >= 22) {
+          return json({ success: true, enviados: 0, motivo: "fora da janela 7h-22h" });
+        }
+        const { data: leads } = await supabase.from("recuperacao_leads").select("*")
+          .in("status", ["aguardando", "em_fluxo"])
+          .not("proximo_envio_em", "is", null)
+          .lte("proximo_envio_em", agora.toISOString())
+          .order("proximo_envio_em", { ascending: true }).limit(30);
+
+        // Carrega as notificações ativas de recuperação (poucas) uma vez.
+        const { data: notifs } = await supabase.from("notificacoes").select("*").eq("ativo", true).eq("gatilho", "recuperacao_venda");
+        const norm = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s-]/g, "");
+        const notifDoLead = (l: any) => (notifs || []).find((n: any) => {
+          if (!n.cidade_slug) return true;
+          const parts = n.cidade_slug.split(",").map((p: string) => norm(p)).filter(Boolean);
+          return parts.some((s: string) => norm(l.cidade || "").includes(s) || norm(l.produto || "").includes(s));
+        }) || (notifs || [])[0];
+
+        let enviados = 0;
+        for (const l of leads || []) {
+          const n = notifDoLead(l);
+          if (!n) {
+            // Sem notificação de recuperação configurada: encerra o fluxo do lead.
+            await supabase.from("recuperacao_leads").update({ status: "fluxo_concluido", proximo_envio_em: null }).eq("id", l.id);
+            continue;
+          }
+          const { data: passos } = await supabase.from("recuperacao_mensagens").select("*")
+            .eq("notificacao_id", n.id).eq("ativo", true).order("ordem", { ascending: true });
+          const lista = passos || [];
+          const atual = lista.find((p: any) => p.ordem === l.proxima_ordem) || lista.find((p: any) => p.ordem >= l.proxima_ordem);
+          if (!atual) {
+            await supabase.from("recuperacao_leads").update({ status: "fluxo_concluido", proximo_envio_em: null }).eq("id", l.id);
+            continue;
+          }
+          if (!l.telefone) {
+            await supabase.from("recuperacao_leads").update({ status: "fluxo_concluido", proximo_envio_em: null }).eq("id", l.id);
+            continue;
+          }
+          const { base: baseT, token: tokenT } = await tokenDe(supabase, cfg, n.instancia);
+          const vars = varsDoLead(l);
+          const msg = render(atual.mensagem, vars);
+          try {
+            await enviarTexto(baseT, tokenT, l.telefone, msg);
+            await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: l.telefone, mensagem: msg, status: "enviado", cidade: l.cidade || null });
+            enviados++;
+          } catch (e) {
+            await supabase.from("notificacao_logs").insert({ notificacao_id: n.id, destinatario: l.telefone, mensagem: msg, status: "erro", erro: String(e), cidade: l.cidade || null });
+          }
+          // Agenda o próximo passo (se houver), respeitando a janela 7h–22h.
+          const proximo = lista.find((p: any) => p.ordem > atual.ordem);
+          if (proximo) {
+            const quando = proximoHorarioValido(new Date(Date.now() + delayMs(proximo.delay_valor, proximo.delay_unidade)));
+            await supabase.from("recuperacao_leads").update({
+              status: "em_fluxo", proxima_ordem: proximo.ordem, proximo_envio_em: quando.toISOString(),
+            }).eq("id", l.id);
+          } else {
+            await supabase.from("recuperacao_leads").update({ status: "fluxo_concluido", proximo_envio_em: null }).eq("id", l.id);
           }
         }
         return json({ success: true, enviados });

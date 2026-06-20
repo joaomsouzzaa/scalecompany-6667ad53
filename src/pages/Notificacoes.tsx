@@ -40,6 +40,16 @@ const GATILHOS: Record<string, { label: string; desc: string; vars: string[] }> 
     desc: "Dispara quando chega uma nova venda de mentoria (Inside Sales)",
     vars: ["nome", "telefone", "produto", "forma_pagamento", "origem", "valor", "observacoes", "cnpj", "dono_negocio", "data_fechamento", "email", "status", "id_transacao", "data"],
   },
+  compra_realizada: {
+    label: "Compra realizada (parabéns ao comprador)",
+    desc: "Assim que a venda é aprovada, envia uma mensagem de parabéns para o WhatsApp do comprador.",
+    vars: ["nome", "email", "telefone", "documento", "produto", "cidade", "valor", "tipo", "status", "quantidade", "forma_pagamento", "data"],
+  },
+  recuperacao_venda: {
+    label: "Recuperação de venda (fluxo)",
+    desc: "Carrinho abandonado/compra recusada → fluxo de mensagens para o lead. Cada mensagem tem um tempo. Nunca envia entre 22h e 7h (segura até as 7h).",
+    vars: ["nome", "email", "telefone", "produto", "cidade", "valor", "tipo", "data"],
+  },
   resumo_cidade: {
     label: "Resumo de cidade (agendado)",
     desc: "Resumo periódico de uma cidade",
@@ -63,6 +73,7 @@ const GATILHOS: Record<string, { label: string; desc: string; vars: string[] }> 
 };
 
 type Dest = { tipo: string; valor: string; nome: string }; // tipo: grupo | numero
+type FluxoPasso = { delay_valor: number; delay_unidade: string; mensagem: string };
 
 type Notificacao = {
   id: string;
@@ -88,6 +99,7 @@ const emptyForm = {
   mensagem: "",
   cidade_slug: null as string | null,
   horario: "09:00" as string | null,
+  fluxo: [{ delay_valor: 2, delay_unidade: "horas", mensagem: "" }] as FluxoPasso[],
   disparo_dia_evento: false,
   horario_evento: "12:00" as string | null,
   sheets_ativo: false,
@@ -280,18 +292,25 @@ export default function Notificacoes() {
 
   const abrirNovo = () => {
     setEditingId(null);
-    setForm({ ...emptyForm, destinatarios: [{ tipo: "grupo", valor: "", nome: "" }] });
+    setForm({ ...emptyForm, destinatarios: [{ tipo: "grupo", valor: "", nome: "" }], fluxo: [{ delay_valor: 2, delay_unidade: "horas", mensagem: "" }] });
     setDialogOpen(true);
   };
-  const abrirEdicao = (n: Notificacao) => {
+  const abrirEdicao = async (n: Notificacao) => {
     setEditingId(n.id);
     const dests: Dest[] = (n.destinatarios && n.destinatarios.length)
       ? n.destinatarios.map((d) => ({ tipo: d.tipo, valor: d.valor, nome: d.nome || "" }))
       : [{ tipo: n.destinatario_tipo || "grupo", valor: n.destinatario || "", nome: n.destinatario_nome || "" }];
+    // Carrega os passos do fluxo de recuperação (se houver).
+    let fluxo: FluxoPasso[] = [{ delay_valor: 2, delay_unidade: "horas", mensagem: "" }];
+    if (n.gatilho === "recuperacao_venda") {
+      const { data: passos } = await (supabase as any).from("recuperacao_mensagens")
+        .select("delay_valor,delay_unidade,mensagem").eq("notificacao_id", n.id).order("ordem", { ascending: true });
+      if (passos && passos.length) fluxo = passos.map((p: any) => ({ delay_valor: p.delay_valor, delay_unidade: p.delay_unidade, mensagem: p.mensagem }));
+    }
     setForm({
       nome: n.nome, gatilho: n.gatilho, ativo: n.ativo,
       instancia: (n as any).instancia || "",
-      destinatarios: dests, mensagem: n.mensagem,
+      destinatarios: dests, mensagem: n.mensagem, fluxo,
       cidade_slug: n.cidade_slug, horario: n.horario || "09:00",
       disparo_dia_evento: (n as any).disparo_dia_evento || false,
       horario_evento: (n as any).horario_evento || "12:00",
@@ -315,8 +334,18 @@ export default function Notificacoes() {
   // Persiste e retorna o id (sem fechar o dialog)
   const salvar = async (): Promise<string | null> => {
     const dests = form.destinatarios.filter((d) => d.valor.trim());
-    if (!form.nome || dests.length === 0 || !form.mensagem) {
-      toast.error("Preencha nome, ao menos um destinatário e a mensagem"); return null;
+    const ehFluxo = form.gatilho === "recuperacao_venda";
+    const enviaParaCliente = ehFluxo || form.gatilho === "compra_realizada";
+    const fluxoValido = form.fluxo.filter((p) => p.mensagem.trim());
+    if (!form.nome) { toast.error("Preencha o nome"); return null; }
+    if (ehFluxo) {
+      if (fluxoValido.length === 0) { toast.error("Adicione ao menos uma mensagem ao fluxo"); return null; }
+    } else if (!form.mensagem) {
+      toast.error("Preencha a mensagem"); return null;
+    }
+    // Gatilhos que enviam para o próprio cliente/lead não exigem destinatário.
+    if (!enviaParaCliente && dests.length === 0) {
+      toast.error("Selecione ao menos um destinatário"); return null;
     }
     const payload = {
       nome: form.nome, gatilho: form.gatilho, ativo: form.ativo,
@@ -325,8 +354,11 @@ export default function Notificacoes() {
       disparo_dia_evento: form.disparo_dia_evento,
       horario_evento: form.horario_evento,
       destinatarios: dests,
-      // legado (1º destinatário) para compatibilidade
-      destinatario_tipo: dests[0].tipo, destinatario: dests[0].valor, destinatario_nome: dests[0].nome || null,
+      // legado (1º destinatário) para compatibilidade. Gatilhos que enviam para
+      // o cliente/lead não têm destinatário fixo — usa um marcador.
+      destinatario_tipo: dests[0]?.tipo || "numero",
+      destinatario: dests[0]?.valor || (enviaParaCliente ? "cliente" : ""),
+      destinatario_nome: dests[0]?.nome || (enviaParaCliente ? "Comprador/Lead" : null),
       sheets_ativo: form.sheets_ativo,
       sheets_spreadsheet_id: form.sheets_spreadsheet_id || null,
       sheets_spreadsheet_nome: form.sheets_spreadsheet_nome || null,
@@ -341,14 +373,26 @@ export default function Notificacoes() {
     if (form.email_ativo && (!emailParaJoin(form.email_destinatarios) || !form.email_corpo.trim())) {
       toast.error("E-mail ativo: preencha ao menos um destinatário e o corpo do e-mail"); return null;
     }
+    // Salva os passos do fluxo de recuperação (delete + reinsere por notificação).
+    const salvarFluxo = async (notifId: string) => {
+      await (supabase as any).from("recuperacao_mensagens").delete().eq("notificacao_id", notifId);
+      const rows = fluxoValido.map((p, i) => ({
+        notificacao_id: notifId, ordem: i + 1,
+        delay_valor: Number(p.delay_valor) || 0, delay_unidade: p.delay_unidade || "horas",
+        mensagem: p.mensagem, ativo: true,
+      }));
+      if (rows.length) await (supabase as any).from("recuperacao_mensagens").insert(rows);
+    };
     if (editingId) {
       const { error } = await (supabase as any).from("notificacoes").update(payload).eq("id", editingId);
       if (error) { toast.error("Erro ao salvar notificação"); return null; }
+      if (ehFluxo) await salvarFluxo(editingId);
       queryClient.invalidateQueries({ queryKey: ["notificacoes"] });
       return editingId;
     }
     const { data, error } = await (supabase as any).from("notificacoes").insert(payload).select("id").single();
     if (error) { toast.error("Erro ao salvar notificação"); return null; }
+    if (ehFluxo) await salvarFluxo(data.id);
     setEditingId(data.id);
     queryClient.invalidateQueries({ queryKey: ["notificacoes"] });
     return data.id;
@@ -489,8 +533,18 @@ export default function Notificacoes() {
   }, [dialogOpen]);
 
   const gatilhoAtual = GATILHOS[form.gatilho];
-  const precisaCidade = form.gatilho === "nova_venda" || form.gatilho === "resumo_cidade" || form.gatilho === "manual";
+  const ehFluxo = form.gatilho === "recuperacao_venda";
+  const enviaParaCliente = ehFluxo || form.gatilho === "compra_realizada";
+  const precisaCidade = form.gatilho === "nova_venda" || form.gatilho === "resumo_cidade" || form.gatilho === "manual" || enviaParaCliente;
   const precisaHorario = form.gatilho === "resumo_cidade" || form.gatilho === "resumo_geral";
+
+  // ---- Fluxo de recuperação (passos) ----
+  const addPasso = () => setForm((f) => ({ ...f, fluxo: [...f.fluxo, { delay_valor: 12, delay_unidade: "horas", mensagem: "" }] }));
+  const removePasso = (i: number) => setForm((f) => ({ ...f, fluxo: f.fluxo.filter((_, idx) => idx !== i) }));
+  const updatePasso = (i: number, patch: Partial<FluxoPasso>) =>
+    setForm((f) => ({ ...f, fluxo: f.fluxo.map((p, idx) => (idx === i ? { ...p, ...patch } : p)) }));
+  const inserirVarPasso = (i: number, v: string) =>
+    updatePasso(i, { mensagem: (form.fluxo[i]?.mensagem || "") + `{{${v}}}` });
 
   return (
     <SidebarProvider>
@@ -619,7 +673,13 @@ export default function Notificacoes() {
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label>Destinatários</Label>
+              <Label>{enviaParaCliente ? "Número para teste (opcional)" : "Destinatários"}</Label>
+              {enviaParaCliente && (
+                <p className="text-[11px] text-muted-foreground">
+                  Esta notificação é enviada automaticamente para o WhatsApp do {ehFluxo ? "lead" : "comprador"}.
+                  O destinatário abaixo é usado apenas no botão "Salvar e testar".
+                </p>
+              )}
               {form.destinatarios.map((d, i) => (
                 <div key={i} className="flex gap-2 items-center">
                   <Select value={d.tipo} onValueChange={(v) => updateDest(i, { tipo: v, valor: "", nome: "" })}>
@@ -721,6 +781,56 @@ export default function Notificacoes() {
               </div>
             )}
 
+            {ehFluxo ? (
+              <div className="space-y-2 md:col-span-2">
+                <Label>Fluxo de mensagens de recuperação</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  As mensagens são enviadas em sequência ao lead. O tempo da 1ª mensagem conta a partir
+                  da chegada do lead; cada mensagem seguinte conta a partir do envio da anterior.
+                  Nunca envia entre 22h e 7h — segura até as 7h.
+                </p>
+                {form.fluxo.map((p, i) => (
+                  <div key={i} className="rounded-md border border-border p-3 space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium">Mensagem {i + 1}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {i === 0 ? "enviar após a chegada do lead:" : "enviar após a mensagem anterior:"}
+                      </span>
+                      <Input type="number" min={0} className="w-20 h-8"
+                        value={p.delay_valor}
+                        onChange={(e) => updatePasso(i, { delay_valor: Number(e.target.value) || 0 })} />
+                      <Select value={p.delay_unidade} onValueChange={(v) => updatePasso(i, { delay_unidade: v })}>
+                        <SelectTrigger className="w-[110px] h-8"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="minutos">minutos</SelectItem>
+                          <SelectItem value="horas">horas</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="ghost" size="icon" className="ml-auto shrink-0 text-destructive"
+                        onClick={() => removePasso(i)} disabled={form.fluxo.length === 1}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {gatilhoAtual?.vars.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        <span className="text-xs text-muted-foreground mr-1">Variáveis:</span>
+                        {gatilhoAtual.vars.map((v) => (
+                          <button key={v} type="button" onClick={() => inserirVarPasso(i, v)}
+                            className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-accent transition-colors">
+                            {`{{${v}}}`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <Textarea rows={3} value={p.mensagem} onChange={(e) => updatePasso(i, { mensagem: e.target.value })}
+                      placeholder={"Ex: Oi {{nome}}! Vi que você não concluiu sua compra do {{produto}}. Posso te ajudar?"} />
+                  </div>
+                ))}
+                <Button type="button" variant="outline" size="sm" onClick={addPasso}>
+                  <Plus className="mr-2 h-4 w-4" /> Adicionar mensagem
+                </Button>
+              </div>
+            ) : (
             <div className="space-y-1 md:col-span-2">
               <Label>Mensagem</Label>
               {gatilhoAtual?.vars.length > 0 && (
@@ -737,6 +847,7 @@ export default function Notificacoes() {
               <Textarea ref={mensagemRef} rows={5} value={form.mensagem} onChange={(e) => setForm({ ...form, mensagem: e.target.value })}
                 placeholder={"Ex: 🎉 Nova venda em {{cidade}}!\nProduto: {{produto}}\nValor: {{valor}}\nComprador: {{nome}}"} />
             </div>
+            )}
 
             {/* Google Sheets */}
             <div className="md:col-span-2 rounded-md border p-3 space-y-3">

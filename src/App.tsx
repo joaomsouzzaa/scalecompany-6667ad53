@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Integracoes from "./pages/Integracoes";
 import VendasEventos from "./pages/VendasEventos";
 import IngressosEmitidos from "./pages/IngressosEmitidos";
+import RecuperacaoVendas from "./pages/RecuperacaoVendas";
 import CadastroCidades from "./pages/CadastroCidades";
 import DashboardGeral from "./pages/DashboardGeral";
 import InsideSales from "./pages/InsideSales";
@@ -50,6 +51,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/vendas-eventos" element={<VendasEventos />} />
           <Route path="/ingressos-emitidos" element={<IngressosEmitidos />} />
+          <Route path="/recuperacao-vendas" element={<RecuperacaoVendas />} />
           <Route path="/email" element={<Email />} />
           <Route path="/upgrade-lote" element={<UpgradeLote />} />
           <Route path="/eventos-geral" element={<DashboardGeral />} />

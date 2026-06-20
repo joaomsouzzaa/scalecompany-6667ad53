@@ -14,7 +14,7 @@ DROP POLICY IF EXISTS "auth write settings" ON public.settings;
 CREATE POLICY "auth write settings" ON public.settings FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 INSERT INTO public.settings(key, value) VALUES
-  ('supabase_url', 'https://dobexeqizssojpzuhkfn.supabase.co')
+  ('supabase_url', 'https://ocbmwwulvpexcixywcdj.supabase.co')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
 
 -- service_role_key: insere apenas se não existir (precisa ser preenchido manualmente se ausente)

@@ -138,6 +138,17 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // Carrinho abandonado / compra recusada: NÃO entram em vendas — viram leads
+    // de recuperação (tela própria + fluxo de mensagens no WhatsApp).
+    const tipoRecuperacao = classificarRecuperacao(payload);
+    if (tipoRecuperacao) {
+      await gravarLeadRecuperacao(supabase, tipoRecuperacao, venda);
+      return new Response(JSON.stringify({ success: true, action: "recuperacao", tipo: tipoRecuperacao }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const status = venda.status as string;
     const idTransacao = venda.id_transacao as string | null;
 
@@ -191,6 +202,13 @@ Deno.serve(async (req) => {
     // Se chegou a compra principal, atualiza upgrades já existentes desse
     // comprador/cidade para refletirem a quantidade correta (ordem inversa).
     await syncUpgradesForCompra(supabase, venda);
+
+    // Venda aprovada: encerra eventuais fluxos de recuperação do mesmo lead
+    // (telefone/email) e dispara a notificação de "compra realizada" ao comprador.
+    if (status === "aprovada") {
+      await marcarLeadComprou(supabase, venda);
+      await dispararCompraRealizada({ ...venda, id: inserida?.id });
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -331,6 +349,121 @@ async function syncUpgradesForCompra(supabase: any, venda: Record<string, unknow
     await q2;
   } catch (_) {
     // silencioso
+  }
+}
+
+// Classifica um evento de recuperação a partir das strings de evento do webhook.
+// Retorna 'abandono' (carrinho abandonado), 'recusada' (compra recusada) ou null.
+function classificarRecuperacao(payload: any): "abandono" | "recusada" | null {
+  const s = [
+    payload?.event, payload?.webhook_event_type, payload?.order_status,
+    payload?.EventType, payload?.status,
+  ].filter(Boolean).join(" ").toLowerCase().replace(/_/g, " ");
+  if (s.includes("abandon") || s.includes("cart") || s.includes("carrinho")) return "abandono";
+  if (s.includes("refus") || s.includes("declin") || s.includes("rejeit") || s.includes("recus")) return "recusada";
+  return null;
+}
+
+// ---- Quiet hours (igual ao uazapi): nunca enviar entre 22h e 7h (SP) ----
+function horaSP(d: Date): number {
+  return Number(d.toLocaleString("en-US", { hour: "2-digit", hour12: false, timeZone: "America/Sao_Paulo" }).slice(0, 2)) % 24;
+}
+function proximoHorarioValido(alvo: Date): Date {
+  const d = new Date(alvo);
+  for (let i = 0; i < 4; i++) {
+    const h = horaSP(d);
+    if (h >= 7 && h < 22) return d;
+    const horasAte7 = h >= 22 ? (24 - h + 7) : (7 - h);
+    d.setTime(d.getTime() + horasAte7 * 3600_000);
+    const min = Number(d.toLocaleString("en-US", { minute: "2-digit", timeZone: "America/Sao_Paulo" }));
+    d.setTime(d.getTime() - min * 60_000);
+  }
+  return d;
+}
+function delayMs(valor: number, unidade: string): number {
+  const v = Number(valor) || 0;
+  return unidade === "minutos" ? v * 60_000 : v * 3600_000;
+}
+
+// Grava um lead de recuperação e agenda a 1ª mensagem do fluxo (se houver
+// notificação 'recuperacao_venda' ativa que case com a cidade/produto).
+async function gravarLeadRecuperacao(
+  supabase: any,
+  tipoEvento: "abandono" | "recusada",
+  venda: Record<string, unknown>,
+) {
+  const norm = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s-]/g, "");
+  const { data: notifs } = await supabase.from("notificacoes").select("*").eq("ativo", true).eq("gatilho", "recuperacao_venda");
+  const cidade = (venda.cidade as string) || "";
+  const produto = (venda.produto as string) || "";
+  const notif = (notifs || []).find((n: any) => {
+    if (!n.cidade_slug) return true;
+    const parts = n.cidade_slug.split(",").map((p: string) => norm(p)).filter(Boolean);
+    return parts.some((s: string) => norm(cidade).includes(s) || norm(produto).includes(s));
+  }) || (notifs || [])[0];
+
+  // Delay do 1º passo (default 2h).
+  let proximo = proximoHorarioValido(new Date(Date.now() + 2 * 3600_000));
+  if (notif) {
+    const { data: passo } = await supabase.from("recuperacao_mensagens").select("delay_valor,delay_unidade")
+      .eq("notificacao_id", notif.id).eq("ativo", true).order("ordem", { ascending: true }).limit(1).maybeSingle();
+    if (passo) proximo = proximoHorarioValido(new Date(Date.now() + delayMs(passo.delay_valor, passo.delay_unidade)));
+  }
+
+  const lead = {
+    tipo_evento: tipoEvento,
+    id_transacao: (venda.id_transacao as string | null) || null,
+    nome: (venda.nome_comprador as string | null) || null,
+    email: (venda.email_comprador as string | null) || null,
+    telefone: (venda.telefone_comprador as string | null) || null,
+    produto: produto || null,
+    cidade: cidade || null,
+    valor: (venda.valor as number | null) ?? null,
+    tipo_ingresso: (venda.tipo_ingresso as string | null) || null,
+    plataforma: (venda.plataforma as string | null) || null,
+    payload: venda.payload,
+    status: "aguardando",
+    proxima_ordem: 1,
+    proximo_envio_em: proximo.toISOString(),
+    data_venda: (venda.data_venda as string) || new Date().toISOString(),
+  };
+  // upsert por id_transacao (quando houver) p/ não duplicar reentregas.
+  if (lead.id_transacao) {
+    await supabase.from("recuperacao_leads").upsert(lead, { onConflict: "id_transacao", ignoreDuplicates: true });
+  } else {
+    await supabase.from("recuperacao_leads").insert(lead);
+  }
+}
+
+// Compra aprovada: marca como "comprou" qualquer lead de recuperação em aberto
+// do mesmo comprador (casa por telefone OU email), parando o fluxo.
+async function marcarLeadComprou(supabase: any, venda: Record<string, unknown>) {
+  const telefone = (venda.telefone_comprador as string | null) || null;
+  const email = (venda.email_comprador as string | null) || null;
+  if (!telefone && !email) return;
+  try {
+    const ors: string[] = [];
+    if (telefone) ors.push(`telefone.eq.${telefone}`);
+    if (email) ors.push(`email.eq.${email}`);
+    await supabase.from("recuperacao_leads")
+      .update({ status: "comprou", comprou_em: new Date().toISOString(), proximo_envio_em: null })
+      .or(ors.join(","))
+      .neq("status", "comprou");
+  } catch (e) {
+    console.log("marcarLeadComprou falhou:", (e as any)?.message || e);
+  }
+}
+
+// Dispara a notificação "compra_realizada" (parabéns ao comprador) via uazapi.
+async function dispararCompraRealizada(venda: Record<string, unknown>) {
+  try {
+    await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/uazapi`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+      body: JSON.stringify({ action: "compra_realizada", venda }),
+    });
+  } catch (e) {
+    console.log("dispararCompraRealizada falhou:", (e as any)?.message || e);
   }
 }
 

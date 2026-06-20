@@ -52,7 +52,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { MoreHorizontal, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, X, Plus, Upload, Download, Copy, RefreshCw } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, X, Plus, Upload, Download, Copy, RefreshCw, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { useProdutos } from "@/hooks/useProdutos";
 
@@ -239,6 +239,9 @@ type VendaRow = {
   telefone_comprador: string | null;
   documento: string | null;
   quantidade: number | null;
+  msg_compra_status: string | null;
+  msg_compra_erro: string | null;
+  msg_compra_em: string | null;
 };
 
 const VendasEventos = () => {
@@ -859,6 +862,7 @@ const VendasEventos = () => {
                     {sortableHead("Valor", "valor", "text-right")}
                     {sortableHead("Pagamento", "metodo_pagamento")}
                     {sortableHead("Status", "status")}
+                    <TableHead>Notificação</TableHead>
                     {sortableHead("Cupom", "cupom")}
                     {sortableHead("Plataforma", "plataforma")}
                     <TableHead className="w-10"></TableHead>
@@ -868,7 +872,7 @@ const VendasEventos = () => {
                   {isLoading ? (
                     Array.from({ length: 8 }).map((_, i) => (
                       <TableRow key={i}>
-                         {Array.from({ length: 13 }).map((_, j) => (
+                         {Array.from({ length: 14 }).map((_, j) => (
                           <TableCell key={j}>
                             <Skeleton className="h-4 w-full" />
                           </TableCell>
@@ -877,7 +881,7 @@ const VendasEventos = () => {
                     ))
                   ) : vendas.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={13} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={14} className="text-center text-muted-foreground py-8">
                         Nenhuma venda encontrada no período selecionado.
                       </TableCell>
                     </TableRow>
@@ -915,6 +919,19 @@ const VendasEventos = () => {
                         <TableCell>{v.metodo_pagamento || "—"}</TableCell>
                         <TableCell>
                           <Badge variant={statusColor(v.status)}>{v.status}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          {v.msg_compra_status === "enviada" ? (
+                            <span className="inline-flex items-center gap-1 text-green-600 text-xs" title={v.msg_compra_em ? new Date(v.msg_compra_em).toLocaleString("pt-BR") : ""}>
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Enviada
+                            </span>
+                          ) : v.msg_compra_status === "erro" ? (
+                            <span className="inline-flex items-center gap-1 text-destructive text-xs" title={v.msg_compra_erro || ""}>
+                              <XCircle className="h-3.5 w-3.5" /> Erro
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
                         </TableCell>
                         <TableCell>{v.cupom || "—"}</TableCell>
                         <TableCell>{v.plataforma}</TableCell>
