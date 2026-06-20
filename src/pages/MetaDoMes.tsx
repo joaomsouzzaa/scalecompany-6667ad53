@@ -46,7 +46,7 @@ interface Snapshot { faturado: number; meta: number; captado_em: string; }
 function Gauge({ pct, cor, tv, fill }: { pct: number; cor: string; tv?: boolean; fill?: boolean }) {
   const data = [{ name: "faturado", value: Math.min(pct, 100), fill: cor }];
   return (
-    <div className={`relative ${tv || fill ? "h-full min-h-0" : "h-[240px]"}`}>
+    <div className={`relative ${tv ? "h-full min-h-0" : fill ? "h-[58vh] min-h-[320px]" : "h-[240px]"}`}>
       <ResponsiveContainer width="100%" height="100%">
         <RadialBarChart innerRadius="70%" outerRadius="100%" data={data} startAngle={180} endAngle={0}>
           <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
@@ -66,7 +66,7 @@ function Gauge({ pct, cor, tv, fill }: { pct: number; cor: string; tv?: boolean;
 
 function Evolution({ data, tv, fill }: { data: { label: string; faturado: number; meta: number }[]; tv?: boolean; fill?: boolean }) {
   return (
-    <div className={tv || fill ? "h-full min-h-0" : "h-[240px]"}>
+    <div className={tv ? "h-full min-h-0" : fill ? "h-[58vh] min-h-[320px]" : "h-[240px]"}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <defs>
@@ -283,14 +283,14 @@ export default function MetaDoMes() {
             </div>
           ) : (
             /* ===================== TELA NORMAL ===================== */
-            <div className="p-6 flex flex-col gap-6 min-h-[calc(100vh-3.5rem)]">
+            <div className="p-6 space-y-6">
               {kpisBlock}
 
-              {/* Velocímetro + evolução do mês — estica para preencher a tela */}
-              <Card className="flex-1 flex flex-col min-h-0">
+              {/* Velocímetro + evolução do mês — preenche a tela (altura em vh) */}
+              <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-base">Velocímetro + evolução do mês</CardTitle></CardHeader>
-                <CardContent className="flex-1 min-h-0">
-                  <div className="grid gap-6 md:grid-cols-2 h-full min-h-0">
+                <CardContent>
+                  <div className="grid gap-6 md:grid-cols-2">
                     <Gauge pct={pct} cor={corGauge} fill />
                     <Evolution data={histData} fill />
                   </div>
