@@ -43,29 +43,30 @@ interface Config {
 interface Snapshot { faturado: number; meta: number; captado_em: string; }
 
 // ===== Gráficos (reutilizados na tela normal e no Modo TV) =====
-function Gauge({ pct, cor, tv }: { pct: number; cor: string; tv?: boolean }) {
+function Gauge({ pct, cor, tv, fill }: { pct: number; cor: string; tv?: boolean; fill?: boolean }) {
   const data = [{ name: "faturado", value: Math.min(pct, 100), fill: cor }];
   return (
-    <div className={`relative ${tv ? "h-full min-h-0" : "h-[240px]"}`}>
+    <div className={`relative ${tv || fill ? "h-full min-h-0" : "h-[240px]"}`}>
       <ResponsiveContainer width="100%" height="100%">
         <RadialBarChart innerRadius="70%" outerRadius="100%" data={data} startAngle={180} endAngle={0}>
           <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
           <RadialBar background dataKey="value" cornerRadius={12} />
         </RadialBarChart>
       </ResponsiveContainer>
-      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none -mt-[6%]">
-        <span className="font-bold leading-none" style={{ color: cor, fontSize: tv ? "clamp(3rem, 9vw, 9rem)" : "2.25rem" }}>
+      {/* Texto na abertura do semicírculo (parte de baixo), sem cobrir o arco */}
+      <div className="absolute inset-x-0 bottom-0 flex flex-col items-center pointer-events-none" style={{ height: "42%", justifyContent: "center" }}>
+        <span className="font-bold leading-none" style={{ color: cor, fontSize: tv || fill ? "clamp(2rem, 7vh, 5rem)" : "2.25rem" }}>
           {pct.toFixed(0)}%
         </span>
-        <span className="text-muted-foreground" style={{ fontSize: tv ? "clamp(1rem, 2vw, 2rem)" : "0.75rem" }}>da meta</span>
+        <span className="text-muted-foreground" style={{ fontSize: tv || fill ? "clamp(0.8rem, 1.6vh, 1.4rem)" : "0.75rem" }}>da meta</span>
       </div>
     </div>
   );
 }
 
-function Evolution({ data, tv }: { data: { label: string; faturado: number; meta: number }[]; tv?: boolean }) {
+function Evolution({ data, tv, fill }: { data: { label: string; faturado: number; meta: number }[]; tv?: boolean; fill?: boolean }) {
   return (
-    <div className={tv ? "h-full min-h-0" : "h-[240px]"}>
+    <div className={tv || fill ? "h-full min-h-0" : "h-[240px]"}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <defs>
@@ -282,16 +283,16 @@ export default function MetaDoMes() {
             </div>
           ) : (
             /* ===================== TELA NORMAL ===================== */
-            <div className="p-6 space-y-6 max-w-6xl">
+            <div className="p-6 flex flex-col gap-6 min-h-[calc(100vh-3.5rem)]">
               {kpisBlock}
 
-              {/* Velocímetro + evolução do mês */}
-              <Card>
+              {/* Velocímetro + evolução do mês — estica para preencher a tela */}
+              <Card className="flex-1 flex flex-col min-h-0">
                 <CardHeader className="pb-2"><CardTitle className="text-base">Velocímetro + evolução do mês</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <Gauge pct={pct} cor={corGauge} />
-                    <Evolution data={histData} />
+                <CardContent className="flex-1 min-h-0">
+                  <div className="grid gap-6 md:grid-cols-2 h-full min-h-0">
+                    <Gauge pct={pct} cor={corGauge} fill />
+                    <Evolution data={histData} fill />
                   </div>
                 </CardContent>
               </Card>
