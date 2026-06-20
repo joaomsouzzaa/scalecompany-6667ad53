@@ -86,6 +86,59 @@ async function tokenDe(supabase: any, cfg: any, nome?: string | null): Promise<{
   return { base, token };
 }
 
+// Lista os grupos de uma instância (normalizados em {id, name}).
+async function listarGrupos(supabase: any, cfg: any, instancia?: string | null) {
+  const { base } = adminCreds(cfg);
+  const { token } = await tokenDe(supabase, cfg, instancia);
+  if (!base || !token) return [] as { id: string; name: string }[];
+  const data = await uazFetch(base, UAZAPI.groups(base), token);
+  const list = data.groups || data.data || data || [];
+  return (Array.isArray(list) ? list : []).map((g: any) => ({
+    id: g.JID || g.id || g.jid || g.gid || g.group_id,
+    name: g.Name || g.name || g.subject || g.title || g.JID || g.id,
+  })).filter((g: any) => g.id);
+}
+
+// Converte número em formato BR ("847.250" ou "2.705.000,50") para Number.
+function parseMetaNumero(raw: string): number {
+  if (!raw) return 0;
+  let s = String(raw).trim();
+  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");   // 1.234,56 -> 1234.56
+  else s = s.replace(/\./g, "");                                      // 847.250 -> 847250
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+// Extrai (faturado/meta) do nome do grupo: "Scale Company (847.250/2.705.000)".
+function parseFaturadoMeta(nome: string): { faturado: number; meta: number } | null {
+  const m = (nome || "").match(/\(([\d.,]+)\s*\/\s*([\d.,]+)\)/);
+  if (!m) return null;
+  return { faturado: parseMetaNumero(m[1]), meta: parseMetaNumero(m[2]) };
+}
+
+// Lê o nome do grupo configurado, faz parse e grava config + snapshot.
+async function metaSync(supabase: any, cfg: any) {
+  const { data: conf } = await supabase.from("meta_faturado_config").select("*").limit(1).maybeSingle();
+  if (!conf) throw new Error("meta_faturado_config não configurada");
+  const grupos = await listarGrupos(supabase, cfg, conf.instancia);
+  // Acha o grupo: por id se setado, senão por nome (match parcial).
+  const alvo = conf.grupo_id
+    ? grupos.find((g) => g.id === conf.grupo_id)
+    : grupos.find((g) => (g.name || "").toLowerCase().includes((conf.grupo_nome || "").toLowerCase()));
+  if (!alvo) throw new Error("Grupo não encontrado na instância");
+  const parsed = parseFaturadoMeta(alvo.name);
+  if (!parsed) throw new Error(`Nome do grupo sem formato (faturado/meta): "${alvo.name}"`);
+  const agora = new Date().toISOString();
+  await supabase.from("meta_faturado_config").update({
+    grupo_id: alvo.id, grupo_nome: alvo.name,
+    faturado: parsed.faturado, meta: parsed.meta, atualizado_em: agora,
+  }).eq("id", conf.id);
+  await supabase.from("meta_faturado_snapshots").insert({
+    faturado: parsed.faturado, meta: parsed.meta, captado_em: agora,
+  });
+  return { ...parsed, grupo_id: alvo.id, grupo_nome: alvo.name, atualizado_em: agora };
+}
+
 // Lista de destinatários de uma notificação (novo formato `destinatarios` ou legado)
 function destinatariosDe(n: any, soNumeros = false): string[] {
   if (Array.isArray(n.destinatarios) && n.destinatarios.length) {
@@ -519,17 +572,14 @@ Deno.serve(async (req) => {
         await supabase.from("uazapi_instancias").update({ status: "desconectado", numero: null, updated_at: new Date().toISOString() }).eq("nome", payload.instancia);
         return json({ success: true, status: "desconectado" });
       }
-      case "groups": {
-        const { base } = adminCreds(cfg);
-        const { token } = await tokenDe(supabase, cfg, payload.instancia);
-        if (!base || !token) return json({ groups: [] });
-        const data = await uazFetch(base, UAZAPI.groups(base), token);
-        const list = data.groups || data.data || data || [];
-        const groups = (Array.isArray(list) ? list : []).map((g: any) => ({
-          id: g.JID || g.id || g.jid || g.gid || g.group_id,
-          name: g.Name || g.name || g.subject || g.title || g.JID || g.id,
-        })).filter((g: any) => g.id);
+      case "groups":
+      case "meta_grupos": {
+        const groups = await listarGrupos(supabase, cfg, payload.instancia);
         return json({ groups });
+      }
+      case "meta_sync": {
+        const result = await metaSync(supabase, cfg);
+        return json({ success: true, ...result });
       }
       case "send": {
         const { base, token } = await tokenDe(supabase, cfg, payload.instancia);

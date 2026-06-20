@@ -24,6 +24,7 @@ import {
   LayoutGrid,
   Mail,
   ArrowUpCircle,
+  Target,
 } from "lucide-react";
 import { useModulos } from "@/hooks/useModulos";
 import { NavLink } from "@/components/NavLink";
@@ -73,6 +74,7 @@ const growthItems = [
 
 const financeiroItems = [
   { title: "Cobrança", url: "/cobranca", icon: CreditCard },
+  { title: "Meta do Mês", url: "/meta-do-mes", icon: Target },
 ];
 
 export function AppSidebar() {

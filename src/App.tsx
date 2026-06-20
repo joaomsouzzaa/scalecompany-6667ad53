@@ -26,6 +26,7 @@ import Performance from "./pages/Performance";
 import Campanhas from "./pages/Campanhas";
 import Email from "./pages/Email";
 import UpgradeLote from "./pages/UpgradeLote";
+import MetaDoMes from "./pages/MetaDoMes";
 import NotFound from "./pages/NotFound";
 
 // Auto-refresh: todas as queries re-buscam a cada 10 min (mesmo sem F5, e em background).
@@ -70,6 +71,7 @@ const App = () => (
           <Route path="/modulos" element={<Modulos />} />
           <Route path="/performance" element={<Performance />} />
           <Route path="/campanhas" element={<Campanhas />} />
+          <Route path="/meta-do-mes" element={<MetaDoMes />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
