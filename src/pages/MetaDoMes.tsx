@@ -198,14 +198,13 @@ export default function MetaDoMes() {
   }
 
   // Blocos reutilizáveis ------------------------------------------------------
-  const kpisBlock = (
-    <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-      <KpiCard title="Faturado" value={fmtBRL(faturado)} icon={DollarSign} iconColor="bg-[#39ff14]/10 text-[#39ff14]" />
-      <KpiCard title="Meta" value={fmtBRL(meta)} icon={Target} iconColor="bg-[#ff2d75]/10 text-[#ff2d75]" />
-      <KpiCard title="Falta" value={fmtBRL(falta)} icon={TrendingUp} iconColor="bg-[#00d4ff]/10 text-[#00d4ff]" />
-      <KpiCard title="Atingido" value={`${pct.toFixed(1)}%`} icon={Percent} />
-    </div>
-  );
+  const kpiCards = [
+    <KpiCard key="f" title="Faturado" value={fmtBRL(faturado)} icon={DollarSign} iconColor="bg-[#39ff14]/10 text-[#39ff14]" />,
+    <KpiCard key="m" title="Meta" value={fmtBRL(meta)} icon={Target} iconColor="bg-[#ff2d75]/10 text-[#ff2d75]" />,
+    <KpiCard key="x" title="Falta" value={fmtBRL(falta)} icon={TrendingUp} iconColor="bg-[#00d4ff]/10 text-[#00d4ff]" />,
+    <KpiCard key="a" title="Atingido" value={`${pct.toFixed(1)}%`} icon={Percent} />,
+  ];
+  const kpisBlock = <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">{kpiCards}</div>;
 
   return (
     <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -258,11 +257,11 @@ export default function MetaDoMes() {
             <div className="meta-tv-body">
               {tvLayout === "2:1" ? (
                 <>
-                  {/* TV 1 — métricas grandes */}
+                  {/* TV 1 — métricas grandes (2x2 preenchendo a tela 16:9) */}
                   <div className="meta-tv-col meta-tv-metrics">
-                    {kpisBlock}
+                    <div className="meta-tv-kpis">{kpiCards}</div>
                   </div>
-                  {/* TV 2 — gráficos grandes */}
+                  {/* TV 2 — gráficos grandes (velocímetro + evolução) */}
                   <div className="meta-tv-col meta-tv-charts">
                     <div className="meta-tv-gauge"><Gauge pct={pct} cor={corGauge} tv /></div>
                     <div className="meta-tv-evo"><Evolution data={histData} tv /></div>
@@ -270,9 +269,11 @@ export default function MetaDoMes() {
                 </>
               ) : (
                 <>
-                  {/* 16:9 — tudo em uma tela */}
-                  <div className="meta-tv-metrics-row">{kpisBlock}</div>
-                  <div className="meta-tv-charts-row">
+                  {/* 16:9 — uma tela: métricas (2x2) à esquerda, gráficos à direita */}
+                  <div className="meta-tv-col meta-tv-metrics">
+                    <div className="meta-tv-kpis">{kpiCards}</div>
+                  </div>
+                  <div className="meta-tv-col meta-tv-charts">
                     <div className="meta-tv-gauge"><Gauge pct={pct} cor={corGauge} tv /></div>
                     <div className="meta-tv-evo"><Evolution data={histData} tv /></div>
                   </div>

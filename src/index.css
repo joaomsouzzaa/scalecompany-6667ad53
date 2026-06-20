@@ -308,35 +308,42 @@ main { min-width: 0; }
 
 
 /* ===== Modo TV da página "Meta do Mês" =====
-   16:9 (1 TV): métricas em cima + velocímetro/evolução embaixo, preenchendo a tela.
-   2:1 (2 TVs): TV1 = métricas grandes · TV2 = gráficos grandes. */
+   Cada "TV" é 16:9. O corpo é dividido em 2 colunas (esquerda = métricas,
+   direita = gráficos). No 16:9 são as duas metades de uma tela; no 2:1 cada
+   coluna é uma TV física 16:9. Fontes em vh para não estourar em ultrawide.
+   gap/padding generosos = margem de segurança contra overscan da TV. */
 .meta-tv { height: 100vh; overflow: hidden; display: flex; flex-direction: column; background: hsl(var(--background)); }
-.meta-tv .meta-tv-body { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 2rem; padding: 2.5rem 4rem; }
+.meta-tv .meta-tv-body {
+  flex: 1 1 0; min-height: 0;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 4vw; padding: 4vh 4vw;
+}
+.meta-tv.meta-tv-2x1 .meta-tv-body { gap: 6vw; }   /* respiro entre as 2 TVs (bezel) */
+.meta-tv .meta-tv-col { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 
-/* --- 16:9 --- */
-.meta-tv .meta-tv-metrics-row { flex: 0 0 auto; }
-.meta-tv .meta-tv-charts-row { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; }
-.meta-tv .meta-tv-charts-row > * { min-width: 0; min-height: 0; }
+/* Coluna de métricas: grid 2x2 que preenche toda a altura da TV */
+.meta-tv .meta-tv-metrics { justify-content: center; }
+.meta-tv .meta-tv-kpis {
+  display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr;
+  gap: 2.5vh 2vw; height: 100%; min-height: 0;
+}
+.meta-tv .meta-tv-kpis .kpi-card {
+  display: flex; flex-direction: column; justify-content: center;
+  min-width: 0; overflow: hidden; padding: 2vh 1.8vw;
+}
+.meta-tv .kpi-card .kpi-title { font-size: clamp(0.9rem, 1.6vh, 1.6rem); line-height: 1.2; }
+.meta-tv .kpi-card .kpi-value {
+  font-size: clamp(1.8rem, 5.5vh, 4.5rem); line-height: 1.05;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.meta-tv .kpi-card .kpi-icon-wrap { height: 5vh; width: 5vh; min-height: 2.5rem; min-width: 2.5rem; }
+.meta-tv .kpi-card .kpi-icon-wrap svg { height: 2.4vh; width: 2.4vh; }
 
-/* --- 2:1 (duas telas lado a lado) --- */
-.meta-tv.meta-tv-2x1 .meta-tv-body { display: grid; grid-template-columns: 1fr 1fr; gap: 3.5rem; }
-.meta-tv.meta-tv-2x1 .meta-tv-col { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.meta-tv.meta-tv-2x1 .meta-tv-metrics { justify-content: center; }
-/* Métricas (TV1) ocupando a tela: grid 2x2 que estica em altura */
-.meta-tv.meta-tv-2x1 .meta-tv-metrics > .grid { height: 100%; align-content: stretch; gap: 2.5rem; }
-.meta-tv.meta-tv-2x1 .meta-tv-metrics .kpi-card { display: flex; flex-direction: column; justify-content: center; }
-/* Gráficos (TV2): velocímetro grande em cima, barras embaixo */
-.meta-tv.meta-tv-2x1 .meta-tv-charts { gap: 2rem; }
-.meta-tv .meta-tv-gauge { flex: 1 1 0; min-height: 0; }
-.meta-tv .meta-tv-bars,
+/* Coluna de gráficos: velocímetro em cima, evolução embaixo */
+.meta-tv .meta-tv-charts { gap: 3vh; }
+.meta-tv .meta-tv-gauge,
 .meta-tv .meta-tv-evo { flex: 1 1 0; min-height: 0; }
 
-/* Métricas enormes no Modo TV (vale p/ 16:9 e 2:1) */
-.meta-tv .kpi-card { padding: 1.5rem 2rem; }
-.meta-tv .kpi-card .kpi-title { font-size: clamp(1rem, 1.5vw, 2rem); line-height: 1.15; }
-.meta-tv .kpi-card .kpi-value { font-size: clamp(2.25rem, 4.5vw, 6rem); line-height: 1.02; white-space: nowrap; }
-.meta-tv .kpi-card .kpi-icon-wrap { height: 3.25rem; width: 3.25rem; }
-.meta-tv .kpi-card .kpi-icon-wrap svg { height: 1.6rem; width: 1.6rem; }
 .meta-tv header { padding-top: 1.1rem; padding-bottom: 1.1rem; }
 
 
