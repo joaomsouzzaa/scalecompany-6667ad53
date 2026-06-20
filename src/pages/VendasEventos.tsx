@@ -281,6 +281,12 @@ const VendasEventos = () => {
     plataforma: "manual",
   });
   const [sincronizando, setSincronizando] = useState(false);
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [syncDias, setSyncDias] = useState(7);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logLoading, setLogLoading] = useState(false);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [logExpandido, setLogExpandido] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { tableRef, onResizeStart, onResizeDoubleClick } = useColumnResize();
   const { data: cidades = [] } = useCidades();
@@ -580,13 +586,36 @@ const VendasEventos = () => {
     queryClient.invalidateQueries({ queryKey: ["vendas-tabela"] });
   };
 
-  const handleSincronizarKiwify = async () => {
+  const carregarLogs = async () => {
+    setLogLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("sync_logs")
+        .select("*")
+        .order("executado_em", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      setLogs(data || []);
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao carregar o log de sincronizações");
+    } finally {
+      setLogLoading(false);
+    }
+  };
+
+  const abrirLog = () => {
+    setLogOpen(true);
+    carregarLogs();
+  };
+
+  const handleSincronizarKiwify = async (dias: number) => {
     setSincronizando(true);
     try {
       const { data, error } = await supabase.functions.invoke("sync-kiwify", {
-        body: { full: true },
+        body: { dias, origem: "manual" },
       });
       if (error) throw error;
+      setSyncDialogOpen(false);
       console.log("[sync-kiwify] resposta completa:", data);
       const inseridos = (data as any)?.convites_inseridos ?? 0;
       // Diagnóstico por cidade (a função retorna `detalhe`): mostra Kiwify x banco
@@ -692,7 +721,7 @@ const VendasEventos = () => {
               </p>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <Button variant="outline" onClick={handleSincronizarKiwify} disabled={sincronizando}>
+              <Button variant="outline" onClick={() => setSyncDialogOpen(true)} disabled={sincronizando}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${sincronizando ? "animate-spin" : ""}`} />
                 {sincronizando ? "Sincronizando..." : "Sincronizar com Kiwify"}
               </Button>
@@ -1144,6 +1173,113 @@ const VendasEventos = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Sincronizar com Kiwify — escolha de janela (dias) + atalho pro log */}
+      <Dialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sincronizar com Kiwify</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="sync-dias">Atualizar os últimos (dias)</Label>
+              <Input
+                id="sync-dias"
+                type="number"
+                min={1}
+                max={365}
+                value={syncDias}
+                onChange={(e) => setSyncDias(Math.max(1, Number(e.target.value) || 1))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Puxa da Kiwify os participantes criados nos últimos {syncDias} dia(s), nas cidades com evento futuro ou há até 7 dias.
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" className="px-0 text-muted-foreground" onClick={abrirLog}>
+              <Clock className="mr-2 h-4 w-4" />
+              Ver log das últimas sincronizações
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSyncDialogOpen(false)} disabled={sincronizando}>
+              Cancelar
+            </Button>
+            <Button onClick={() => handleSincronizarKiwify(syncDias)} disabled={sincronizando}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${sincronizando ? "animate-spin" : ""}`} />
+              {sincronizando ? "Sincronizando..." : "Sincronizar agora"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Log das últimas sincronizações */}
+      <Dialog open={logOpen} onOpenChange={setLogOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Log das últimas sincronizações</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            {logLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+            {!logLoading && logs.length === 0 && (
+              <p className="text-sm text-muted-foreground">Nenhuma sincronização registrada ainda.</p>
+            )}
+            {!logLoading && logs.map((l) => {
+              const ok = l.status === "ok";
+              const aberto = logExpandido === l.id;
+              return (
+                <div key={l.id} className="rounded-md border border-border">
+                  <button
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left"
+                    onClick={() => setLogExpandido(aberto ? null : l.id)}
+                  >
+                    {ok ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                    ) : (
+                      <XCircle className="h-4 w-4 shrink-0 text-destructive" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium">
+                        {new Date(l.executado_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                        <Badge variant="outline" className="ml-2 align-middle text-[10px]">
+                          {l.origem === "manual" ? "manual" : "automático"}
+                        </Badge>
+                        {l.dias_janela != null && (
+                          <span className="ml-2 text-xs text-muted-foreground">{l.dias_janela}d</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {l.cidades_ativas} cidade(s) · {l.convites_inseridos} inserido(s) · {l.vendas_faltando} faltando · {l.erros} erro(s)
+                      </div>
+                    </div>
+                    <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${aberto ? "rotate-180" : ""}`} />
+                  </button>
+                  {aberto && (
+                    <div className="border-t border-border px-3 py-2">
+                      {l.mensagem_erro && (
+                        <p className="mb-2 text-xs text-destructive">Erro: {l.mensagem_erro}</p>
+                      )}
+                      {Array.isArray(l.relatorio_erros) && l.relatorio_erros.length > 0 && (
+                        <p className="mb-2 text-xs text-destructive">
+                          Falha no envio do relatório: {l.relatorio_erros.join("; ")}
+                        </p>
+                      )}
+                      <pre className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                        {l.relatorio || "(sem relatório)"}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={carregarLogs} disabled={logLoading}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${logLoading ? "animate-spin" : ""}`} />
+              Atualizar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Import CSV Dialog */}
       <Dialog open={importOpen} onOpenChange={(o) => { setImportOpen(o); if (!o) resetImport(); }}>

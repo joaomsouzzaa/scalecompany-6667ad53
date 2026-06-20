@@ -106,6 +106,12 @@ function ingressoDeParticipante(part: any, cidadeNome: string, vendaId: string |
 
 const fmtSP = () => new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
+// Grava 1 linha de histórico em sync_logs (best-effort, nunca quebra a sync).
+async function registrarLog(supabase: any, dados: Record<string, unknown>) {
+  try { await supabase.from("sync_logs").insert(dados); }
+  catch (e) { console.log("sync_logs insert falhou:", (e as any)?.message || e); }
+}
+
 // Busca destinatários do relatório na tabela `notificacoes`:
 // linha mais recente com gatilho='relatorio_sync' e ativo=true.
 // Retorna a lista de números/JIDs (com fallback) + cabeçalho opcional + id da notificação.
@@ -341,24 +347,38 @@ Deno.serve(async (req) => {
     if (body?.action === "backfill_ingressos") {
       return json(await backfillIngressos(supabase));
     }
-    // Sync manual (botão "Sincronizar com Kiwify"): processa TODAS as cidades e
-    // todo o histórico, sem filtro de cidade ativa nem janela de 72h.
+    // Sync manual (botão): `full:true` = histórico completo (legado);
+    // `dias:N` = janela de N dias escolhida no popup. `origem` rotula o log.
     const fullSync = body?.full === true || body?.action === "full";
+    const diasParam = Number(body?.dias);
+    const temDias = Number.isFinite(diasParam) && diasParam > 0;
+    const origem = (body?.origem === "manual" || temDias || fullSync) ? "manual" : "auto";
+    // Janela de processamento: manual usa N dias do popup; automático mantém 72h
+    // (roda 2x/dia, então 72h cobre com folga). `full` ignora a janela.
+    const JANELA_HORAS = temDias ? diasParam * 24 : 72;
+    const dias_janela = fullSync ? null : Math.round(JANELA_HORAS / 24);
 
     const token = await getToken();
 
-    // Cidades ATIVAS: mesma regra do dashboard (DashboardFilters.tsx) — a cidade
-    // continua ativa até 48h após a meia-noite do evento; depois disso sai da
-    // sincronização. Vale tanto pro automático quanto pro manual (full).
+    // Cidades a sincronizar: toda cidade cujo evento seja futuro OU tenha passado
+    // há no máximo 7 dias. Só descarta depois de evento + 7 dias (antes era +48h,
+    // que dava gap em vendas/check-ins atrasados). Vale pro auto e pro manual.
     const AGORA = Date.now();
+    const RETENCAO_MS = 7 * 24 * 60 * 60 * 1000; // evento + 7 dias
     const { data: cids } = await supabase.from("cidades").select("nome,slug,data_evento");
     const ativas = (cids || []).filter((c: any) => {
       if (!c.data_evento) return true;
       const ev = new Date(c.data_evento); ev.setHours(0, 0, 0, 0);
-      return AGORA <= ev.getTime() + 48 * 60 * 60 * 1000; // evento + 48h
+      return AGORA <= ev.getTime() + RETENCAO_MS;
     });
     if (ativas.length === 0) {
-      const rel0 = await enviarRelatorio(supabase, montarRelatorio([], 0));
+      const textoRel = montarRelatorio([], 0);
+      const rel0 = await enviarRelatorio(supabase, textoRel);
+      await registrarLog(supabase, {
+        origem, dias_janela, cidades_ativas: 0, convites_inseridos: 0, vendas_faltando: 0,
+        erros: rel0.erros.length, status: rel0.erros.length ? "erro" : "ok",
+        relatorio: textoRel, detalhe: [], relatorio_enviados: rel0.enviados, relatorio_erros: rel0.erros,
+      });
       return json({ success: true, msg: "Nenhuma cidade ativa", inseridos: 0, relatorio: rel0 });
     }
 
@@ -404,11 +424,8 @@ Deno.serve(async (req) => {
     };
 
     let inseridos = 0;
-    // Janela de processamento: últimas 72h no sync automático (leve). Quando
-    // chamado com { full: true } (botão "Sincronizar com Kiwify" da tela de
-    // Vendas), processa TODO o histórico — sem janela — pra puxar convites
-    // antigos que ficaram pra trás.
-    const JANELA_HORAS = 72;
+    // Janela de processamento já calculada acima (JANELA_HORAS): N dias no manual,
+    // 72h no automático. `full` ignora a janela e varre todo o histórico.
     const CUTOFF_MS = fullSync ? -Infinity : Date.now() - JANELA_HORAS * 3600 * 1000;
     // Acumula participantes p/ gravar ingressos_emitidos EM LOTE no fim (upsert
     // por participante estourava o timeout de 150s).
@@ -497,7 +514,18 @@ Deno.serve(async (req) => {
     }
 
     const rels = [...relPorCidade.values()];
-    const relatorio = await enviarRelatorio(supabase, montarRelatorio(rels, ativas.length));
+    const relatorioTexto = montarRelatorio(rels, ativas.length);
+    const relatorio = await enviarRelatorio(supabase, relatorioTexto);
+
+    const totalFaltando = rels.reduce((s, c) => s + c.vendas_faltando.length, 0);
+    const totalErrosIns = rels.reduce((s, c) => s + c.erros.length, 0);
+    const errosTotal = totalErrosIns + relatorio.erros.length;
+    await registrarLog(supabase, {
+      origem, dias_janela, cidades_ativas: ativas.length, convites_inseridos: inseridos,
+      vendas_faltando: totalFaltando, erros: errosTotal, status: errosTotal ? "erro" : "ok",
+      relatorio: relatorioTexto, detalhe: rels, relatorio_enviados: relatorio.enviados,
+      relatorio_erros: relatorio.erros,
+    });
 
     return json({
       success: true,
@@ -507,6 +535,8 @@ Deno.serve(async (req) => {
       detalhe: rels,
     });
   } catch (err) {
-    return json({ error: err instanceof Error ? err.message : "erro interno" }, 500);
+    const msg = err instanceof Error ? err.message : "erro interno";
+    try { await svc().from("sync_logs").insert({ status: "erro", mensagem_erro: msg }); } catch (_) { /* best-effort */ }
+    return json({ error: msg }, 500);
   }
 });
