@@ -121,10 +121,16 @@ async function metaSync(supabase: any, cfg: any) {
   const { data: conf } = await supabase.from("meta_faturado_config").select("*").limit(1).maybeSingle();
   if (!conf) throw new Error("meta_faturado_config não configurada");
   const grupos = await listarGrupos(supabase, cfg, conf.instancia);
-  // Acha o grupo: por id se setado, senão por nome (match parcial).
-  const alvo = conf.grupo_id
-    ? grupos.find((g) => g.id === conf.grupo_id)
-    : grupos.find((g) => (g.name || "").toLowerCase().includes((conf.grupo_nome || "").toLowerCase()));
+  // Por id (escolha explícita do usuário): usa exatamente esse grupo.
+  // Por nome: entre os que contêm o nome, prefere os que têm o formato (x/y).
+  let alvo: { id: string; name: string } | undefined;
+  if (conf.grupo_id) {
+    alvo = grupos.find((g) => g.id === conf.grupo_id);
+  } else {
+    const termo = (conf.grupo_nome || "").toLowerCase();
+    const candidatos = grupos.filter((g) => (g.name || "").toLowerCase().includes(termo));
+    alvo = candidatos.find((g) => parseFaturadoMeta(g.name)) || candidatos[0];
+  }
   if (!alvo) throw new Error("Grupo não encontrado na instância");
   const parsed = parseFaturadoMeta(alvo.name);
   if (!parsed) throw new Error(`Nome do grupo sem formato (faturado/meta): "${alvo.name}"`);
